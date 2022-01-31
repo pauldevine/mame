@@ -26,6 +26,7 @@
 #include "bus/centronics/ctronics.h"
 #include "bus/ieee488/ieee488.h"
 #include "bus/rs232/rs232.h"
+#include "bus/victor9k/expansion/expansion.h"
 #include "cpu/i86/i86.h"
 #include "formats/victor9k_dsk.h"
 #include "imagedev/floppy.h"
@@ -193,8 +194,7 @@ private:
 
 void victor9k_state::victor9k_mem(address_map &map)
 {
-	map(0x00000, 0x1ffff).ram();
-	map(0x20000, 0xdffff).noprw();
+	map(0x00000, 0xdffff).ram();
 	map(0xe0000, 0xe0001).mirror(0x7f00).rw(m_pic, FUNC(pic8259_device::read), FUNC(pic8259_device::write));
 	map(0xe0020, 0xe0023).mirror(0x7f00).rw(I8253_TAG, FUNC(pit8253_device::read), FUNC(pit8253_device::write));
 	map(0xe0040, 0xe0043).mirror(0x7f00).rw(m_upd7201, FUNC(upd7201_device::cd_ba_r), FUNC(upd7201_device::cd_ba_w));
@@ -775,7 +775,8 @@ void victor9k_state::victor9k(machine_config &config)
 	m_fdc->syn_wr_callback().set(I8259A_TAG, FUNC(pic8259_device::ir0_w)).invert();
 	m_fdc->lbrdy_wr_callback().set_inputline(I8088_TAG, INPUT_LINE_TEST).invert();
 
-	RAM(config, m_ram).set_default_size("128K");
+	// internal ram
+	RAM(config, m_ram).set_default_size("128K").set_extra_options("128K,256K,512K,640K,768K,896K");
 
 	SOFTWARE_LIST(config, "flop_list").set_original("victor9k_flop");
 }
