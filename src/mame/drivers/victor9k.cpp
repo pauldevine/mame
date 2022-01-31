@@ -194,7 +194,8 @@ private:
 
 void victor9k_state::victor9k_mem(address_map &map)
 {
-	map(0x00000, 0xdffff).ram();
+	map(0x00000, 0x1ffff).ram();
+	map(0x20000, 0xdffff).noprw();
 	map(0xe0000, 0xe0001).mirror(0x7f00).rw(m_pic, FUNC(pic8259_device::read), FUNC(pic8259_device::write));
 	map(0xe0020, 0xe0023).mirror(0x7f00).rw(I8253_TAG, FUNC(pit8253_device::read), FUNC(pit8253_device::write));
 	map(0xe0040, 0xe0043).mirror(0x7f00).rw(m_upd7201, FUNC(upd7201_device::cd_ba_r), FUNC(upd7201_device::cd_ba_w));
@@ -628,6 +629,15 @@ void victor9k_state::machine_start()
 	save_item(NAME(m_ssda_irq));
 	save_item(NAME(m_kbrdy));
 	save_item(NAME(m_kbackctl));
+    
+    int m_ram_size = m_ram->size();
+    u8 *m_ram_ptr = m_ram->pointer();
+
+    int ramsize = m_ram_size - 0x1ffff; // subtract 128K for main board, which is handled seperately
+	if (ramsize > 0) {
+		address_space& space = m_maincpu->space(AS_PROGRAM);
+		space.install_ram(0x020000, ramsize - 1 + 0x20000, m_ram_ptr + 0x020000);
+	}
 
 #ifndef USE_SCP
 	// patch out SCP self test
