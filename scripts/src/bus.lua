@@ -2321,6 +2321,21 @@ if (BUSES["VIC20"]~=null) then
 	}
 end
 
+---------------------------------------------------
+--
+--@src/devices/bus/vic10/exp.h,BUSES["VIC10"] = true
+---------------------------------------------------
+
+if (BUSES["VICTOR_9000_BUS"]~=null) then
+	files {
+		MAME_DIR .. "src/devices/bus/victor9k/expansion/expansion.cpp",
+		MAME_DIR .. "src/devices/bus/victor9k/expansion/expansion.h",
+		MAME_DIR .. "src/devices/bus/victor9k/expansion/cards.cpp",
+		MAME_DIR .. "src/devices/bus/victor9k/expansion/cards.h",
+		MAME_DIR .. "src/devices/bus/victor9k/expansion/winchester.cpp",
+		MAME_DIR .. "src/devices/bus/victor9k/expansion/winchester.h",
+	}
+end
 
 ---------------------------------------------------
 --

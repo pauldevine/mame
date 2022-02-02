@@ -27,6 +27,7 @@
 #include "bus/ieee488/ieee488.h"
 #include "bus/rs232/rs232.h"
 #include "bus/victor9k/expansion/expansion.h"
+#include "bus/victor9k/expansion/cards.h"
 #include "cpu/i86/i86.h"
 #include "formats/victor9k_dsk.h"
 #include "imagedev/floppy.h"
@@ -86,6 +87,7 @@ public:
 		m_palette(*this, "palette"),
 		m_rom(*this, I8088_TAG),
 		m_video_ram(*this, "video_ram"),
+		m_victor9k_slot_device(*this, "victor9k_exp_slot"),
 		m_brt(0),
 		m_cont(0),
 		m_via1_irq(CLEAR_LINE),
@@ -95,7 +97,17 @@ public:
 		m_ssda_irq(CLEAR_LINE),
 		m_kbrdy(1),
 		m_kbackctl(0)
+		
 	{ }
+
+		// inline configuration
+		template <typename T> void set_cputag(T &&tag)
+		{
+			m_maincpu.set_tag(std::forward<T>(tag));
+			subdevice<victor9k_device>("isa")->set_memspace(std::forward<T>(tag), AS_PROGRAM);
+			subdevice<victor9k_device>("isa")->set_iospace(std::forward<T>(tag), AS_IO);
+		}
+
 
 	void victor9k(machine_config &config);
 
@@ -119,6 +131,7 @@ private:
 	required_device<palette_device> m_palette;
 	required_memory_region m_rom;
 	required_shared_ptr<uint8_t> m_video_ram;
+	required_device<victor9k_slot_device> m_victor9k_slot_device;
 
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
