@@ -14,13 +14,14 @@
 
 
 #include "emu.h"
+#include "machine/genpc.h"
 
 #include "bus/isa/xsu_cards.h"
 #include "bus/pc_kbd/keyboards.h"
 #include "bus/pc_kbd/pc_kbdc.h"
 #include "cpu/i86/i86.h"
-#include "machine/genpc.h"
 #include "machine/ram.h"
+
 #include "softlist_dev.h"
 
 
@@ -29,7 +30,7 @@
 #define LOG_DEBUG     (1U <<  2)
 
 //#define VERBOSE (LOG_DEBUG)
-//#define LOG_OUTPUT_FUNC printf
+//#define LOG_OUTPUT_FUNC osd_printf_info
 #include "logmacro.h"
 
 #define LOGKBD(...) LOGMASKED(LOG_KEYBOARD, __VA_ARGS__)
