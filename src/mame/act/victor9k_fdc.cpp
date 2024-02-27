@@ -51,8 +51,8 @@
 #define LOG_DISK    (1U << 3)
 #define LOG_BITS    (1U << 4)
 
-//#define VERBOSE (LOG_VIA | LOG_SCP | LOG_DISK | LOG_BITS)
-//#define LOG_OUTPUT_STREAM std::cout
+#define VERBOSE (LOG_VIA | LOG_DISK | LOG_BITS)
+#define LOG_OUTPUT_STREAM std::cout
 
 #include "logmacro.h"
 
@@ -87,7 +87,24 @@
 
 // TODO wrong values here! motor speed is controlled by an LM2917, with help from the spindle TACH and a DAC0808 whose value is set by the SCP 8048
 const int victor_9000_fdc_device::rpm[] = { 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 254, 255, 257, 259, 260, 262, 264, 266, 267, 269, 271, 273, 275, 276, 278, 280, 282, 284, 286, 288, 290, 291, 293, 295, 297, 299, 301, 303, 305, 307, 309, 311, 313, 315, 318, 320, 322, 324, 326, 328, 330, 333, 335, 337, 339, 342, 344, 346, 348, 351, 353, 355, 358, 360, 362, 365, 367, 370, 372, 375, 377, 380, 382, 385, 387, 390, 392, 395, 398, 400, 403, 406, 408, 411, 414, 416, 419, 422, 425, 428, 430, 433, 436, 439, 442, 445, 448, 451, 454, 457, 460, 463, 466, 469, 472, 475, 478, 482, 485, 488, 491, 494, 498, 501, 504, 508, 511, 514, 518, 521, 525, 528, 532, 535, 539, 542, 546, 550, 553, 557, 561, 564, 568, 572, 576, 579, 583, 587, 591, 595, 599, 603, 607, 611, 615, 619, 623, 627, 631, 636, 640, 644, 648, 653, 657, 661, 666, 670, 674, 679, 683, 688, 693, 697, 702, 706, 711, 716, 721, 725, 730, 735, 740, 745, 750, 755, 760, 765, 770, 775, 780, 785, 790, 796, 801, 806, 812, 817, 822, 828, 833, 839, 844, 850, 856, 861, 867, 873, 878, 884 };
-
+const std::unordered_map<uint8_t, int> gcrMap = {
+    {0x0a, 0x0},
+	{0x0b, 0x1},
+	{0x12, 0x2},
+	{0x13, 0x3},
+	{0x0e, 0x4},
+	{0x0f, 0x5},
+	{0x16, 0x6},
+	{0x17, 0x7},
+	{0x09, 0x8},
+	{0x19, 0x9},
+	{0x1a, 0xa},
+	{0x1b, 0xb},
+	{0x0d, 0xc},
+	{0x1d, 0xd},
+	{0x1e, 0xe},
+	{0x15, 0xf}
+};
 
 
 //**************************************************************************
@@ -280,7 +297,7 @@ void victor_9000_fdc_device::device_start()
 	save_item(NAME(m_stp));
 	save_item(NAME(m_drive));
 	save_item(NAME(m_side));
-	save_item(NAME(m_drw));
+	save_item(NAME(m_drive_rw));
 	save_item(NAME(m_erase));
 	save_item(NAME(m_via4_irq));
 	save_item(NAME(m_via5_irq));
@@ -552,7 +569,7 @@ void victor_9000_fdc_device::update_stepper_motor(floppy_image_device *floppy, i
 		floppy->stp_w(1);
 		floppy->stp_w(0);
 	}
-
+	LOGBITS("update_stepper_motor old_st: %d, st: %d\n", old_st, st);
 	floppy->set_rpm(victor9k_format::get_rpm(m_side, floppy->get_cyl()));
 }
 
@@ -865,14 +882,14 @@ void victor_9000_fdc_device::via6_pa_w(uint8_t data)
 
 	    bit     description
 
-	    PA0     LED0A
-	    PA1
-	    PA2     LED1A
-	    PA3
-	    PA4     SIDE SELECT
-	    PA5     DRIVE SELECT
-	    PA6
-	    PA7
+	    PA0     LED0A		 LED, drive A, output
+	    PA1     TRK0D0 		 Track 0, drive A sense, input
+	    PA2     LED1A        LED, drive B, output
+	    PA3     TRK0D1 		 Track 0, drive B sense, input
+	    PA4     SIDE SELECT  Dual side select, output
+	    PA5     DRIVE SELECT Select drive A/B, output
+	    PA6     WPS			 Write protect sense, input
+	    PA7     SYNC         Disk sync detect, input
 
 	*/
 
@@ -1011,13 +1028,14 @@ void victor_9000_fdc_device::via6_pb_w(uint8_t data)
 
 void victor_9000_fdc_device::drw_w(int state)
 {
-	if (m_drw != state)
+	if (m_drive_rw != state)
 	{
+		cur_live.next_state = CHANGED_RW_MODE;
 		live_sync();
-		m_drw = cur_live.drw = state;
+		m_drive_rw = cur_live.drw = state;
 		checkpoint();
 		LOGVIA("%s %s DRW %u\n", machine().time().as_string(), machine().describe_context(), state);
-		if (state)
+		if (state == DRIVE_READ)
 		{
 			pll_stop_writing(get_floppy(), machine().time());
 		}
@@ -1073,19 +1091,20 @@ floppy_image_device* victor_9000_fdc_device::get_floppy()
 
 void victor_9000_fdc_device::live_start()
 {
+	LOGBITS("%s live_start\n", cur_live.tm.as_string());
 	cur_live.tm = machine().time();
-	cur_live.state = RUNNING;
+	cur_live.state = READ_BYTE;
 	cur_live.next_state = -1;
 
 	cur_live.shift_reg = 0;
 	cur_live.shift_reg_write = 0;
 	cur_live.bit_counter = 0;
 	cur_live.sync_bit_counter = 0;
-	cur_live.sync_byte_counter = 0;
+	//cur_live.sync_byte_counter = 0;
 
 	cur_live.drive = m_drive;
 	cur_live.side = m_side;
-	cur_live.drw = m_drw;
+	cur_live.drw = m_drive_rw;
 	cur_live.wd = m_wd;
 	cur_live.wrsync = m_wrsync;
 	cur_live.erase = m_erase;
@@ -1140,6 +1159,16 @@ bool victor_9000_fdc_device::pll_write_next_bit(bool bit, attotime &tm, floppy_i
 	return cur_pll.write_next_bit(bit, tm, floppy, limit);
 }
 
+int victor_9000_fdc_device::decode_data_gcr(uint8_t gcr) 
+{
+    auto it = gcrMap.find(gcr);
+    if (it != gcrMap.end()) 
+    {
+        return it->second;
+    }
+    return -1; // or throw an exception, etc.
+}
+
 void victor_9000_fdc_device::checkpoint()
 {
 	pll_commit(get_floppy(), cur_live.tm);
@@ -1169,6 +1198,7 @@ void victor_9000_fdc_device::live_sync()
 		if(cur_live.tm > machine().time())
 		{
 			rollback();
+			LOGBITS("live_sync() calling live_run()");
 			live_run(machine().time());
 			pll_commit(get_floppy(), cur_live.tm);
 		}
@@ -1177,16 +1207,18 @@ void victor_9000_fdc_device::live_sync()
 			pll_commit(get_floppy(), cur_live.tm);
 			if(cur_live.next_state != -1)
 			{
+				LOGBITS("live_sync() progressing next_state current / next %s / %d", cur_live.state, cur_live.next_state);
 				cur_live.state = cur_live.next_state;
 				cur_live.next_state = -1;
 			}
 			if(cur_live.state == IDLE)
 			{
+				LOGBITS("live_sync() IDLE case");
 				pll_stop_writing(get_floppy(), cur_live.tm);
 				cur_live.tm = attotime::never;
 			}
 		}
-		cur_live.next_state = -1;
+		cur_live.next_state =-1;
 		checkpoint();
 	}
 }
@@ -1213,7 +1245,264 @@ void victor_9000_fdc_device::live_abort()
 	cur_live.gcr_err = 1;
 }
 
+void victor_9000_fdc_device::handle_write_data_state(const attotime &limit) 
+{
+    // setup write shift register with GCR coded value
+	cur_live.shift_reg_write = GCR_ENCODE(cur_live.e, cur_live.i);
+	cur_live.bit_counter = 0;
+	
+    while(cur_live.bit_counter < 10)
+    {
+	    // write bit
+	    int write_bit = BIT(cur_live.shift_reg_write, 9);
+		uint8_t result = pll_write_next_bit(write_bit, cur_live.tm, get_floppy(), limit);
+		if(result < 0)
+			return;	
+		
+		// clock write shift register
+		cur_live.shift_reg_write <<= 1;
+		cur_live.shift_reg_write &= 0x3ff;
+		cur_live.bit_counter++;
+	}
+    return;
+}
+
+void victor_9000_fdc_device::handle_read_byte_state(const attotime &limit) 
+{
+    //handle read byte state, moving to next state when 8 bits have been read
+    cur_live.bit_counter = 0;
+    cur_live.shift_reg = 0;
+    cur_live.brdy = true;                     //BRDY is active low
+    attotime next = cur_live.tm + m_period;
+    LOGBITS("%s:%s handle_read_byte_state\n", cur_live.tm.as_string(), next.as_string());
+    
+    while(cur_live.tm < limit)
+    {
+		// read bit
+		uint8_t bit = !pll_get_next_bit(cur_live.tm, get_floppy(), limit);
+		//uint8_t bit = 1;
+
+		if(bit < 0)
+		{
+			LOGBITS("++++++++++++++negative bit");
+			return;
+		}
+		
+		// clock read shift register
+		cur_live.shift_reg <<= 1;
+		cur_live.shift_reg |= bit;
+		cur_live.shift_reg &= SHIFT_REG_MASK;
+
+		LOGBITS("%s:%s cyl %u bit %u bc %u sr %03x sbc %u sBC %u i %03x e %02x sync %01x\n",
+			cur_live.tm.as_string(),next.as_string(),get_floppy()->get_cyl(),bit,
+			cur_live.bit_counter,cur_live.shift_reg,cur_live.sync_bit_counter,
+			cur_live.sync_byte_counter,cur_live.i,cur_live.e, cur_live.syn);		
+		
+		//if we have two 5-bit nibbles, a byte is ready
+		if (cur_live.bit_counter == 9)
+		{
+			cur_live.next_state = BYTE_READY;
+			handle_byte_ready_state(limit);
+			handle_sync_search_state(limit);
+			m_via5->write_ca1(1);
+			return;
+		}
+		cur_live.bit_counter++;
+	}
+	return;
+}
+
+void victor_9000_fdc_device::handle_byte_ready_state(const attotime &limit) 
+{
+	cur_live.next_state = IDLE;
+	attotime next = cur_live.tm + m_period;
+	LOGBITS("%s:%s handle_byte_ready_state\n", cur_live.tm.as_string(), next.as_string());
+	
+	LOGBITS("%s:%s cyl %u bc %u sr %03x sbc %u sBC %u i %03x e %02x\n",
+			cur_live.tm.as_string(),next.as_string(),get_floppy()->get_cyl(),
+			cur_live.bit_counter,cur_live.shift_reg,cur_live.sync_bit_counter,
+			cur_live.sync_byte_counter,cur_live.i,cur_live.e);
+
+	//the 6522 needs to latch the byte with BRDY
+	cur_live.i = cur_live.shift_reg;
+	uint16_t left_nibble = cur_live.shift_reg >> 5;
+	uint16_t right_nibble = cur_live.shift_reg & 0x1f;
+	int16_t left_decoded = decode_data_gcr(left_nibble);
+	int16_t right_decoded = decode_data_gcr(right_nibble);
+
+	if (left_decoded == -1 || right_decoded == -1)
+	{
+		cur_live.gcr_err = false;  //GCR ERR is active low
+		LOGDISK("%s GCR ERR %u\n", cur_live.tm.as_string(), cur_live.gcr_err);
+	}
+
+	LOGBITS("%s GCR NIBBLES left: %03x right: %03x shift_reg: %03x left_decoded: %03x right_decoded: %03x\n", 
+		cur_live.tm.as_string(), left_nibble, right_nibble, cur_live.shift_reg, 
+		left_decoded, right_decoded);
+
+	// GCR decoder uses upper 1K of the 2K ROM locations
+	cur_live.i = cur_live.drw << 10 | cur_live.shift_reg;
+	cur_live.e = left_decoded << 4 | right_decoded;
+	cur_live.brdy = false;             //BRDY is active low	
+	m_via5->write_ca1(cur_live.brdy);
+	cur_live.bit_counter = 0;
+	LOGBITS("%s BRDY %u shift_reg: %03x i: %03x e: %03x\n", cur_live.tm.as_string(), 
+		cur_live.brdy, cur_live.shift_reg, cur_live.i, cur_live.e);
+	
+	//after the 6522 has the byte, we need the 8088 to latch it with LBRDY
+	m_lbrdy_cb(0);
+	cur_live.lbrdy_changed = false; 
+	checkpoint();
+	return;
+}
+
+void victor_9000_fdc_device::handle_sync_search_state(const attotime &limit) {
+    //searching disk for SYNC signals, defined as GCR nibbles of all 1's
+    //the sector header has 15 sync nibles or 6 GCR nibbles for the data header
+    //i.e. one sync nibble = 11111 in binary, will 
+    //never occur in normal data stream
+    cur_live.next_state = IDLE;
+	attotime next = cur_live.tm + m_period;
+
+	if (cur_live.gcr_err == false)
+	{
+		cur_live.gcr_err=true;
+		LOGBITS("%s:%s GCR ERR\n", cur_live.tm.as_string(), next.as_string());
+		return;
+	}
+
+	LOGBITS("%s:%s handle_sync_search_state\n", cur_live.tm.as_string(), next.as_string());
+	
+	LOGBITS("%s:%s cyl %u bc %u sr %03x sbc %u sBC %u i %03x e %02x\n",
+			cur_live.tm.as_string(),next.as_string(),get_floppy()->get_cyl(),
+			cur_live.bit_counter,cur_live.shift_reg,cur_live.sync_bit_counter,
+			cur_live.sync_byte_counter,cur_live.i,cur_live.e);
+
+    // test register for SYNC byte, 10 binary 1's.
+	if (cur_live.shift_reg == SYNC_HEADER)
+	{
+		cur_live.sync_byte_counter++; //found one sync byte
+		LOGDISK("%s:%s handle_sync_search_state found sync byte count: %u\n", 
+			cur_live.tm.as_string(), next.as_string(), cur_live.sync_byte_counter);
+		cur_live.syn = true;
+		cur_live.syn_changed = true;
+	} else 
+	{
+		//if we're not a SYNC byte, reset counter
+		cur_live.sync_byte_counter = 0;	
+		cur_live.syn = false;
+		cur_live.syn_changed = false;
+	}
+
+	//5 SYNC bytes in a row indicates SYNC found
+	if (cur_live.sync_byte_counter >= 5) 
+	{
+		LOGDISK("%s:%s SYNC_FOUND %s sync_byte_counter: %u\n", 
+			cur_live.tm.as_string(), next.as_string(), cur_live.syn, cur_live.sync_byte_counter);
+		cur_live.syn = true;
+		cur_live.syn_changed = true;
+	}
+
+	if (cur_live.sync_byte_counter >= 15) 
+	{
+		LOGDISK("%s:%s SYNC_FOUND %s sync_byte_reset: %u\n", 
+			cur_live.tm.as_string(), next.as_string(), cur_live.syn, cur_live.sync_byte_counter);
+		cur_live.syn = false;
+		cur_live.syn_changed = true;
+		cur_live.sync_byte_counter = 0;
+	}
+	m_syn_cb(cur_live.syn);
+	
+	checkpoint();
+    return;
+}
+
+void victor_9000_fdc_device::handle_sync_write_state(const attotime &limit) {
+    //
+    
+}
+
 void victor_9000_fdc_device::live_run(const attotime &limit)
+{
+	int test = (cur_live.next_state == -1);
+    LOGDISK("%s live_run cur_live.state: %s cur_live.next_state: %s test: %d\n", 
+    	cur_live.tm.as_string(), cur_live.state, cur_live.next_state, test);
+
+    if (cur_live.state == IDLE && cur_live.next_state == -1)
+        return;
+
+    if (cur_live.state == IDLE)
+    {
+    	cur_live.state = cur_live.next_state;
+    	cur_live.next_state = -1;
+    }
+
+    LOGDISK("%s live_run cur_live.state: %s cur_live.next_state: %s %s:%s\n", 
+    	cur_live.tm.as_string(), cur_live.state, cur_live.next_state,
+    	cur_live.tm.as_string(), limit.as_string());
+    
+
+    while(cur_live.tm < limit)
+    {
+    	LOGDISK("%s live_run cur_live.state: %s cur_live.next_state: %s\n", 
+    		cur_live.tm.as_string(), cur_live.state, cur_live.next_state);
+        switch(cur_live.state)
+        {
+        case IDLE:
+            // handle idle state, simply return
+            handle_read_byte_state(limit);
+            if(cur_live.next_state != -1) {
+				return;
+			}
+            break;
+
+        case READ_BYTE:
+            // handle sync detection
+            handle_read_byte_state(limit);
+            break;
+
+        case BYTE_READY:
+            // handle sync
+            handle_byte_ready_state(limit);
+            break;
+
+        case SYNC_SEARCH:
+            // Perform necessary steps to write sync code
+            handle_sync_search_state(limit);
+            break;
+
+        case SYNC_WRITE:
+            // Perform necessary steps to write sync code
+            handle_sync_write_state(limit);
+            break;
+
+        case WRITE_BYTE:
+            // handle writing a bit
+            handle_write_data_state(limit);
+            break;
+
+        case CHANGED_RW_MODE:
+            // Perform necessary updates for mode change
+            // Then decide what the next state should be based on the new mode
+            cur_live.state = IDLE;
+            break;
+
+        default:
+            // handle unexpected state
+            if(cur_live.next_state != -1) {
+				//log undefined state
+				LOGDISK("cur_live.next_state is undefined %d", cur_live.next_state);
+            }
+            break;
+        }
+
+        // Update time
+        cur_live.tm += attotime::from_usec(21.3); 
+    }
+}
+
+
+void victor_9000_fdc_device::live_run_orig(const attotime &limit)
 {
 	if(cur_live.state == IDLE || cur_live.next_state != -1)
 		return;
