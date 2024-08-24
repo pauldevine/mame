@@ -78,7 +78,7 @@ private:
 		IDLE,
 	    READ_BYTE,
 	    BYTE_READY,
-	    SYNC_SEARCH,
+	    SYNC_FOUND,
 	    SYNC_WRITE,
 	    WRITE_BYTE,
 	    WRITE_SYNC,
@@ -199,7 +199,7 @@ private:
 	void handle_read_byte_state(const attotime &limit = attotime::never);
 	void handle_write_data_state(const attotime &limit = attotime::never);
 	void handle_byte_ready_state(const attotime &limit = attotime::never);
-	void handle_sync_search_state(const attotime &limit = attotime::never);
+	void handle_sync_found_state(const attotime &limit = attotime::never);
 	void handle_sync_write_state(const attotime &limit = attotime::never);
 	void live_run(const attotime &limit = attotime::never);
 	void live_run_orig(const attotime &limit = attotime::never);

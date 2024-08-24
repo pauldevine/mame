@@ -260,7 +260,7 @@ victor_9000_fdc_device::victor_9000_fdc_device(const machine_config &mconfig, co
 {
 	cur_live.tm = attotime::never;
 	cur_live.state = IDLE;
-	cur_live.next_state = -1;
+	cur_live.next_state = IDLE;
 }
 
 
@@ -1093,8 +1093,6 @@ void victor_9000_fdc_device::live_start()
 {
 	LOGBITS("%s live_start\n", cur_live.tm.as_string());
 	cur_live.tm = machine().time();
-	cur_live.state = READ_BYTE;
-	cur_live.next_state = -1;
 
 	cur_live.shift_reg = 0;
 	cur_live.shift_reg_write = 0;
@@ -1209,7 +1207,7 @@ void victor_9000_fdc_device::live_sync()
 			{
 				LOGBITS("live_sync() progressing next_state current / next %s / %d", cur_live.state, cur_live.next_state);
 				cur_live.state = cur_live.next_state;
-				cur_live.next_state = -1;
+				cur_live.next_state = IDLE;
 			}
 			if(cur_live.state == IDLE)
 			{
@@ -1218,7 +1216,7 @@ void victor_9000_fdc_device::live_sync()
 				cur_live.tm = attotime::never;
 			}
 		}
-		cur_live.next_state =-1;
+		cur_live.next_state = IDLE;
 		checkpoint();
 	}
 }
@@ -1235,7 +1233,7 @@ void victor_9000_fdc_device::live_abort()
 
 	cur_live.tm = attotime::never;
 	cur_live.state = IDLE;
-	cur_live.next_state = -1;
+	cur_live.next_state = IDLE;
 
 	cur_live.brdy = 1;
 	cur_live.lbrdy_changed = true;
@@ -1273,6 +1271,7 @@ void victor_9000_fdc_device::handle_read_byte_state(const attotime &limit)
     cur_live.bit_counter = 0;
     cur_live.shift_reg = 0;
     cur_live.brdy = true;                     //BRDY is active low
+    m_via5->write_ca1(cur_live.brdy);
     attotime next = cur_live.tm + m_period;
     LOGBITS("%s:%s handle_read_byte_state\n", cur_live.tm.as_string(), next.as_string());
     
@@ -1301,11 +1300,13 @@ void victor_9000_fdc_device::handle_read_byte_state(const attotime &limit)
 		//if we have two 5-bit nibbles, a byte is ready
 		if (cur_live.bit_counter == 9)
 		{
-			cur_live.next_state = BYTE_READY;
-			handle_byte_ready_state(limit);
-			handle_sync_search_state(limit);
-			m_via5->write_ca1(1);
-			return;
+			if (cur_live.shift_reg == SYNC_HEADER) {
+				cur_live.next_state = SYNC_FOUND;
+				return;
+			} else {
+				cur_live.next_state = BYTE_READY;
+				return;
+			}
 		}
 		cur_live.bit_counter++;
 	}
@@ -1322,6 +1323,11 @@ void victor_9000_fdc_device::handle_byte_ready_state(const attotime &limit)
 			cur_live.tm.as_string(),next.as_string(),get_floppy()->get_cyl(),
 			cur_live.bit_counter,cur_live.shift_reg,cur_live.sync_bit_counter,
 			cur_live.sync_byte_counter,cur_live.i,cur_live.e);
+
+	//reset the SYNC counter, if we have a non-sync byte we're out of sync found state
+	cur_live.sync_byte_counter = 0;
+	cur_live.sync = true;  //SYNC is active low
+	m_via6->write_pa7(cur_live.sync); // Set the SYNC signal high to stop sync counting
 
 	//the 6522 needs to latch the byte with BRDY
 	cur_live.i = cur_live.shift_reg;
@@ -1350,19 +1356,22 @@ void victor_9000_fdc_device::handle_byte_ready_state(const attotime &limit)
 		cur_live.brdy, cur_live.shift_reg, cur_live.i, cur_live.e);
 	
 	//after the 6522 has the byte, we need the 8088 to latch it with LBRDY
-	m_lbrdy_cb(0);
-	cur_live.lbrdy_changed = false; 
+	cur_live.lbrdy_changed = false;       //LBRDY is active low
+	m_lbrdy_cb(cur_live.lbrdy_changed);
+	cur_live.next_state = READ_BYTE;
 	checkpoint();
 	return;
 }
 
-void victor_9000_fdc_device::handle_sync_search_state(const attotime &limit) {
+void victor_9000_fdc_device::handle_sync_found_state(const attotime &limit) {
     //searching disk for SYNC signals, defined as GCR nibbles of all 1's
     //the sector header has 15 sync nibles or 6 GCR nibbles for the data header
     //i.e. one sync nibble = 11111 in binary, will 
     //never occur in normal data stream
-    cur_live.next_state = IDLE;
+    //xxcur_live.next_state = IDLE;
 	attotime next = cur_live.tm + m_period;
+
+	LOGDISK("%s:%s handle_sync_found_state - Start SYNC search\n", cur_live.tm.as_string(), next.as_string());
 
 	if (cur_live.gcr_err == false)
 	{
@@ -1371,49 +1380,41 @@ void victor_9000_fdc_device::handle_sync_search_state(const attotime &limit) {
 		return;
 	}
 
-	LOGBITS("%s:%s handle_sync_search_state\n", cur_live.tm.as_string(), next.as_string());
+	LOGBITS("%s:%s handle_sync_found_state\n", cur_live.tm.as_string(), next.as_string());
 	
 	LOGBITS("%s:%s cyl %u bc %u sr %03x sbc %u sBC %u i %03x e %02x\n",
 			cur_live.tm.as_string(),next.as_string(),get_floppy()->get_cyl(),
 			cur_live.bit_counter,cur_live.shift_reg,cur_live.sync_bit_counter,
 			cur_live.sync_byte_counter,cur_live.i,cur_live.e);
 
-    // test register for SYNC byte, 10 binary 1's.
-	if (cur_live.shift_reg == SYNC_HEADER)
-	{
-		cur_live.sync_byte_counter++; //found one sync byte
-		LOGDISK("%s:%s handle_sync_search_state found sync byte count: %u\n", 
-			cur_live.tm.as_string(), next.as_string(), cur_live.sync_byte_counter);
-		cur_live.syn = true;
-		cur_live.syn_changed = true;
-	} else 
-	{
-		//if we're not a SYNC byte, reset counter
-		cur_live.sync_byte_counter = 0;	
-		cur_live.syn = false;
-		cur_live.syn_changed = false;
-	}
+    cur_live.sync = false;	   //SYNC is active low
+    m_via6->write_pa7(cur_live.sync);  // Set the SYNC signal low to start counting
 
-	//5 SYNC bytes in a row indicates SYNC found
-	if (cur_live.sync_byte_counter >= 5) 
-	{
-		LOGDISK("%s:%s SYNC_FOUND %s sync_byte_counter: %u\n", 
-			cur_live.tm.as_string(), next.as_string(), cur_live.syn, cur_live.sync_byte_counter);
-		cur_live.syn = true;
-		cur_live.syn_changed = true;
-	}
+    cur_live.sync_byte_counter++;  // Found a sync nibble
+    LOGDISK("%s:%s SYNC byte found, count: %u\n", cur_live.tm.as_string(), next.as_string(), cur_live.sync_byte_counter);
 
-	if (cur_live.sync_byte_counter >= 15) 
-	{
-		LOGDISK("%s:%s SYNC_FOUND %s sync_byte_reset: %u\n", 
-			cur_live.tm.as_string(), next.as_string(), cur_live.syn, cur_live.sync_byte_counter);
-		cur_live.syn = false;
-		cur_live.syn_changed = true;
-		cur_live.sync_byte_counter = 0;
-	}
-	m_syn_cb(cur_live.syn);
-	
-	checkpoint();
+    // 10 SYNC bytes in a row indicate SYN should fire to the 8088
+    if (cur_live.sync_byte_counter == 10)  
+    {
+        LOGDISK("%s:%s Header block SYNC detected\n", cur_live.tm.as_string(), next.as_string());
+        cur_live.syn = false;          //SYN active low
+        cur_live.syn_changed = true;
+        m_syn_cb(cur_live.syn);  // Call back to indicate syn signal to PIC IR0 called, inform 8088 of sync
+        return;
+    }
+
+    // If more than 15 SYNC bytes are detected, reset the sync state
+    if (cur_live.sync_byte_counter >= 15)
+    {
+        LOGDISK("%s:%s Resetting SYNC state, sync_byte_counter: %u\n", cur_live.tm.as_string(), next.as_string(), cur_live.sync_byte_counter);
+        cur_live.sync_byte_counter = 0;
+        cur_live.syn = true;       //SYN active low
+        cur_live.syn_changed = true;
+    }
+
+    // Continue the SYNC search by setting the next state to SYNC_SEARCH
+    cur_live.next_state = READ_BYTE;
+    checkpoint();  // Save the current state
     return;
 }
 
@@ -1428,19 +1429,9 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
     LOGDISK("%s live_run cur_live.state: %s cur_live.next_state: %s test: %d\n", 
     	cur_live.tm.as_string(), cur_live.state, cur_live.next_state, test);
 
-    if (cur_live.state == IDLE && cur_live.next_state == -1)
-        return;
-
-    if (cur_live.state == IDLE)
-    {
-    	cur_live.state = cur_live.next_state;
-    	cur_live.next_state = -1;
-    }
-
     LOGDISK("%s live_run cur_live.state: %s cur_live.next_state: %s %s:%s\n", 
     	cur_live.tm.as_string(), cur_live.state, cur_live.next_state,
     	cur_live.tm.as_string(), limit.as_string());
-    
 
     while(cur_live.tm < limit)
     {
@@ -1449,35 +1440,31 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
         switch(cur_live.state)
         {
         case IDLE:
-            // handle idle state, simply return
-            handle_read_byte_state(limit);
-            if(cur_live.next_state != -1) {
-				return;
-			}
+            cur_live.next_state = READ_BYTE;
             break;
 
         case READ_BYTE:
-            // handle sync detection
+            // handle byte detection
             handle_read_byte_state(limit);
             break;
 
         case BYTE_READY:
-            // handle sync
+            // handle byte ready state
             handle_byte_ready_state(limit);
             break;
 
-        case SYNC_SEARCH:
-            // Perform necessary steps to write sync code
-            handle_sync_search_state(limit);
+        case SYNC_FOUND:
+            // handle finding sync bits
+            handle_sync_found_state(limit);
             break;
 
         case SYNC_WRITE:
-            // Perform necessary steps to write sync code
+            // handle writing sync code
             handle_sync_write_state(limit);
             break;
 
         case WRITE_BYTE:
-            // handle writing a bit
+            // handle writing a byte
             handle_write_data_state(limit);
             break;
 
@@ -1491,7 +1478,7 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
             // handle unexpected state
             if(cur_live.next_state != -1) {
 				//log undefined state
-				LOGDISK("cur_live.next_state is undefined %d", cur_live.next_state);
+				LOGDISK("cur_live.next_state is undefined %d current state %d", cur_live.next_state, cur_live.state);
             }
             break;
         }
