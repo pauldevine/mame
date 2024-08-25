@@ -193,7 +193,7 @@ private:
 	int decode_data_gcr(uint8_t gcr);
 	void checkpoint();
 	void rollback();
-	void live_delay(int state);
+	void live_delay();
 	void live_sync();
 	void live_abort();
 	void handle_read_byte_state(const attotime &limit = attotime::never);

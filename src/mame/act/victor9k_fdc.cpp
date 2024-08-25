@@ -1107,6 +1107,9 @@ void victor_9000_fdc_device::live_start()
 	cur_live.wrsync = m_wrsync;
 	cur_live.erase = m_erase;
 
+	cur_live.state = IDLE;
+	cur_live.next_state = READ_BYTE;
+
 	pll_reset(cur_live.tm);
 	checkpoint_live = cur_live;
 	pll_save_checkpoint();
@@ -1180,9 +1183,8 @@ void victor_9000_fdc_device::rollback()
 	pll_retrieve_checkpoint();
 }
 
-void victor_9000_fdc_device::live_delay(int state)
+void victor_9000_fdc_device::live_delay()
 {
-	cur_live.next_state = state;
 	if(cur_live.tm != machine().time())
 		t_gen->adjust(cur_live.tm - machine().time());
 	else
@@ -1203,20 +1205,7 @@ void victor_9000_fdc_device::live_sync()
 		else
 		{
 			pll_commit(get_floppy(), cur_live.tm);
-			if(cur_live.next_state != -1)
-			{
-				LOGBITS("live_sync() progressing next_state current / next %s / %d", cur_live.state, cur_live.next_state);
-				cur_live.state = cur_live.next_state;
-				cur_live.next_state = IDLE;
-			}
-			if(cur_live.state == IDLE)
-			{
-				LOGBITS("live_sync() IDLE case");
-				pll_stop_writing(get_floppy(), cur_live.tm);
-				cur_live.tm = attotime::never;
-			}
 		}
-		cur_live.next_state = IDLE;
 		checkpoint();
 	}
 }
@@ -1302,6 +1291,7 @@ void victor_9000_fdc_device::handle_read_byte_state(const attotime &limit)
 		{
 			if (cur_live.shift_reg == SYNC_HEADER) {
 				cur_live.next_state = SYNC_FOUND;
+				live_delay();
 				return;
 			} else {
 				cur_live.next_state = BYTE_READY;
@@ -1369,6 +1359,7 @@ void victor_9000_fdc_device::handle_sync_found_state(const attotime &limit) {
     //i.e. one sync nibble = 11111 in binary, will 
     //never occur in normal data stream
     //xxcur_live.next_state = IDLE;
+
 	attotime next = cur_live.tm + m_period;
 
 	LOGDISK("%s:%s handle_sync_found_state - Start SYNC search\n", cur_live.tm.as_string(), next.as_string());
@@ -1396,10 +1387,11 @@ void victor_9000_fdc_device::handle_sync_found_state(const attotime &limit) {
     // 10 SYNC bytes in a row indicate SYN should fire to the 8088
     if (cur_live.sync_byte_counter == 10)  
     {
-        LOGDISK("%s:%s Header block SYNC detected\n", cur_live.tm.as_string(), next.as_string());
+        LOGDISK("%s:%s Sector header SYN detected, calling PIC\n", cur_live.tm.as_string(), next.as_string());
         cur_live.syn = false;          //SYN active low
         cur_live.syn_changed = true;
         m_syn_cb(cur_live.syn);  // Call back to indicate syn signal to PIC IR0 called, inform 8088 of sync
+        cur_live.next_state = IDLE;
         return;
     }
 
@@ -1425,22 +1417,28 @@ void victor_9000_fdc_device::handle_sync_write_state(const attotime &limit) {
 
 void victor_9000_fdc_device::live_run(const attotime &limit)
 {
-	int test = (cur_live.next_state == -1);
-    LOGDISK("%s live_run cur_live.state: %s cur_live.next_state: %s test: %d\n", 
-    	cur_live.tm.as_string(), cur_live.state, cur_live.next_state, test);
+	
+	cur_live.state = cur_live.next_state;
 
-    LOGDISK("%s live_run cur_live.state: %s cur_live.next_state: %s %s:%s\n", 
+	if (cur_live.tm == limit) {
+		LOGDISK("cur_live.tm == limit, updating cur_live.tm\n");
+		//cur_live.tm = machine().time();
+	}
+
+	bool more_time = (cur_live.tm < limit);
+
+    LOGDISK("%s live_run cur_live.state: %s cur_live.next_state: %s %s:%s more_time: %s\n", 
     	cur_live.tm.as_string(), cur_live.state, cur_live.next_state,
-    	cur_live.tm.as_string(), limit.as_string());
+    	cur_live.tm.as_string(), limit.as_string(), more_time ? "true" : "false" );
 
-    while(cur_live.tm < limit)
+    while(true)
     {
     	LOGDISK("%s live_run cur_live.state: %s cur_live.next_state: %s\n", 
     		cur_live.tm.as_string(), cur_live.state, cur_live.next_state);
         switch(cur_live.state)
         {
         case IDLE:
-            cur_live.next_state = READ_BYTE;
+            return;
             break;
 
         case READ_BYTE:
@@ -1471,7 +1469,7 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
         case CHANGED_RW_MODE:
             // Perform necessary updates for mode change
             // Then decide what the next state should be based on the new mode
-            cur_live.state = IDLE;
+            cur_live.next_state = IDLE;
             break;
 
         default:
@@ -1483,8 +1481,12 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
             break;
         }
 
+        if (cur_live.tm > limit)
+			return; 
+
         // Update time
         cur_live.tm += attotime::from_usec(21.3); 
+        cur_live.state = cur_live.next_state;
     }
 }
 
@@ -1655,7 +1657,7 @@ void victor_9000_fdc_device::live_run_orig(const attotime &limit)
 
 			if (syncpoint)
 			{
-				live_delay(RUNNING_SYNCPOINT);
+				//live_delay(RUNNING_SYNCPOINT);
 				return;
 			}
 			break;
