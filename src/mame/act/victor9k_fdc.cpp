@@ -1256,7 +1256,11 @@ void victor_9000_fdc_device::handle_write_data_state(const attotime &limit)
 
 void victor_9000_fdc_device::handle_read_byte_state(const attotime &limit) 
 {
-    //handle read byte state, moving to next state when 8 bits have been read
+    //handle read byte state, this simplye reads 10 bits from the disk
+    //and runs them through GCR decode to get either 8 bits of a byte of data
+    //or a SYNC byte, 10 of which together = start of sector
+    //once the GCR is decoded the state advances to where the byte 
+    //or SYNC is handled
     cur_live.bit_counter = 0;
     cur_live.shift_reg = 0;
     cur_live.brdy = true;                     //BRDY is active low
@@ -1305,6 +1309,8 @@ void victor_9000_fdc_device::handle_read_byte_state(const attotime &limit)
 
 void victor_9000_fdc_device::handle_byte_ready_state(const attotime &limit) 
 {
+	//after GCR is decoded, this state signals the processor that a byte
+	//is ready to be sent to the 8088 for handling
 	cur_live.next_state = IDLE;
 	attotime next = cur_live.tm + m_period;
 	LOGBITS("%s:%s handle_byte_ready_state\n", cur_live.tm.as_string(), next.as_string());
@@ -1314,10 +1320,13 @@ void victor_9000_fdc_device::handle_byte_ready_state(const attotime &limit)
 			cur_live.bit_counter,cur_live.shift_reg,cur_live.sync_bit_counter,
 			cur_live.sync_byte_counter,cur_live.i,cur_live.e);
 
-	//reset the SYNC counter, if we have a non-sync byte we're out of sync found state
+	//reset the SYNC counter, if here we have a non-sync byte we're out of sync found state
 	cur_live.sync_byte_counter = 0;
 	cur_live.sync = true;  //SYNC is active low
 	m_via6->write_pa7(cur_live.sync); // Set the SYNC signal high to stop sync counting
+	cur_live.syn = false;
+	m_syn_cb(cur_live.syn);
+
 
 	//the 6522 needs to latch the byte with BRDY
 	cur_live.i = cur_live.shift_reg;
@@ -1339,15 +1348,20 @@ void victor_9000_fdc_device::handle_byte_ready_state(const attotime &limit)
 	// GCR decoder uses upper 1K of the 2K ROM locations
 	cur_live.i = cur_live.drw << 10 | cur_live.shift_reg;
 	cur_live.e = left_decoded << 4 | right_decoded;
-	cur_live.brdy = false;             //BRDY is active low	
-	m_via5->write_ca1(cur_live.brdy);
+
+	cur_live.brdy = true;             //BRDY is active low, but inverted in the victor9k.cpp file
+
 	cur_live.bit_counter = 0;
-	LOGBITS("%s BRDY %u shift_reg: %03x i: %03x e: %03x\n", cur_live.tm.as_string(), 
+	LOGDISK("%s BRDY %u shift_reg: %03x i: %03x e: %03x\n", cur_live.tm.as_string(), 
 		cur_live.brdy, cur_live.shift_reg, cur_live.i, cur_live.e);
 	
+	//tell the 6522 to latch the byte as it's ready BRDY
+	cur_live.lbrdy_changed = false;       
+	m_via5->write_ca1(cur_live.brdy);
+
 	//after the 6522 has the byte, we need the 8088 to latch it with LBRDY
-	cur_live.lbrdy_changed = false;       //LBRDY is active low
-	m_lbrdy_cb(cur_live.lbrdy_changed);
+	m_lbrdy_cb(cur_live.brdy);
+
 	cur_live.next_state = READ_BYTE;
 	checkpoint();
 	return;
@@ -1378,19 +1392,28 @@ void victor_9000_fdc_device::handle_sync_found_state(const attotime &limit) {
 			cur_live.bit_counter,cur_live.shift_reg,cur_live.sync_bit_counter,
 			cur_live.sync_byte_counter,cur_live.i,cur_live.e);
 
+	//if we're here we don't have a byte ready, make sure that signal is off
+    cur_live.brdy = false;        //BRDY is active low, but inverted in the victor9k.cpp file
+	cur_live.lbrdy_changed = true;
+	m_via5->write_ca1(cur_live.brdy);
+	m_lbrdy_cb(cur_live.brdy);
+
+
+	//indicate we have a live SYNC 
     cur_live.sync = false;	   //SYNC is active low
     m_via6->write_pa7(cur_live.sync);  // Set the SYNC signal low to start counting
-
+    
     cur_live.sync_byte_counter++;  // Found a sync nibble
     LOGDISK("%s:%s SYNC byte found, count: %u\n", cur_live.tm.as_string(), next.as_string(), cur_live.sync_byte_counter);
 
     // 10 SYNC bytes in a row indicate SYN should fire to the 8088
-    if (cur_live.sync_byte_counter == 10)  
+    if (cur_live.sync_byte_counter == 15)  
     {
         LOGDISK("%s:%s Sector header SYN detected, calling PIC\n", cur_live.tm.as_string(), next.as_string());
-        cur_live.syn = false;          //SYN active low
+        cur_live.syn = true;          //SYN active low, but inverted in the victor9k.cpp
         cur_live.syn_changed = true;
         m_syn_cb(cur_live.syn);  // Call back to indicate syn signal to PIC IR0 called, inform 8088 of sync
+        //m_irq_cb(true);
         cur_live.next_state = IDLE;
         return;
     }
@@ -1400,8 +1423,11 @@ void victor_9000_fdc_device::handle_sync_found_state(const attotime &limit) {
     {
         LOGDISK("%s:%s Resetting SYNC state, sync_byte_counter: %u\n", cur_live.tm.as_string(), next.as_string(), cur_live.sync_byte_counter);
         cur_live.sync_byte_counter = 0;
-        cur_live.syn = true;       //SYN active low
+        cur_live.sync = true;
+        m_via6->write_pa7(cur_live.sync); 
+        cur_live.syn = false;       //SYN active low, but inverted in the victor9k.cpp
         cur_live.syn_changed = true;
+        m_syn_cb(cur_live.syn); 
     }
 
     // Continue the SYNC search by setting the next state to SYNC_SEARCH
