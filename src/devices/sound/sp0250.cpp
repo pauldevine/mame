@@ -109,11 +109,6 @@ void sp0250_device::device_reset()
 	load_values();
 }
 
-TIMER_CALLBACK_MEMBER(sp0250_device::delayed_stream_update)
-{
-	m_stream->update();
-}
-
 static uint16_t sp0250_ga(uint8_t v)
 {
 	return (v & 0x1f) << (v>>5);
@@ -181,7 +176,7 @@ void sp0250_device::write(uint8_t data)
 }
 
 
-uint8_t sp0250_device::drq_r()
+int sp0250_device::drq_r()
 {
 	m_stream->update();
 	return (m_fifo_pos == 15) ? CLEAR_LINE : ASSERT_LINE;

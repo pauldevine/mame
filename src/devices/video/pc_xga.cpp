@@ -9,7 +9,6 @@
 #include "logmacro.h"
 
 DEFINE_DEVICE_TYPE(XGA_COPRO,  xga_copro_device,  "xga_copro",  "IBM XGA Coprocessor")
-DEFINE_DEVICE_TYPE(OTI111,     oak_oti111_vga_device,  "oti111_vga",  "Oak Technologies Spitfire 64111")
 
 xga_copro_device::xga_copro_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
 	: device_t(mconfig, XGA_COPRO, tag, owner, clock)
@@ -755,111 +754,4 @@ void xga_copro_device::device_start()
 void xga_copro_device::device_reset()
 {
 	m_pelmap = 0;
-}
-
-oak_oti111_vga_device::oak_oti111_vga_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
-	: svga_device(mconfig, OTI111, tag, owner, clock)
-	, m_xga(*this, "xga")
-{
-}
-
-void oak_oti111_vga_device::device_add_mconfig(machine_config &config)
-{
-	XGA_COPRO(config, m_xga, 0);
-	m_xga->mem_read_callback().set(FUNC(oak_oti111_vga_device::mem_linear_r));
-	m_xga->mem_write_callback().set(FUNC(oak_oti111_vga_device::mem_linear_w));
-	m_xga->set_type(xga_copro_device::TYPE::OTI111);
-}
-
-u8 oak_oti111_vga_device::xga_read(offs_t offset)
-{
-	switch(offset)
-	{
-		case 0x13: //fifo status
-			return 0xf;
-		default:
-			return m_xga->xga_read(offset);
-	}
-	return 0;
-}
-
-void oak_oti111_vga_device::xga_write(offs_t offset, u8 data)
-{
-	m_xga->xga_write(offset, data);
-}
-
-void oak_oti111_vga_device::device_start()
-{
-	svga_device::device_start();
-	std::fill(std::begin(m_oak_regs), std::end(m_oak_regs), 0);
-}
-
-u8 oak_oti111_vga_device::dac_read(offs_t offset)
-{
-	if(offset >= 6)
-		return vga_device::port_03c0_r(offset);
-	return 0;
-}
-
-void oak_oti111_vga_device::dac_write(offs_t offset, u8 data)
-{
-	if(offset >= 6)
-		vga_device::port_03c0_w(offset, data);
-}
-
-
-u8 oak_oti111_vga_device::port_03d0_r(offs_t offset)
-{
-	uint8_t res = 0xff;
-	switch(offset)
-	{
-		case 14:
-			return m_oak_idx;
-		case 15:
-			return m_oak_idx <= 0x3a ? m_oak_regs[m_oak_idx] : 0;
-		default:
-			if (get_crtc_port() == 0x3d0)
-				res = vga_device::port_03d0_r(offset);
-			break;
-	}
-
-	return res;
-}
-
-void oak_oti111_vga_device::port_03d0_w(offs_t offset, uint8_t data)
-{
-	switch(offset)
-	{
-		case 14:
-			m_oak_idx = data;
-			break;
-		case 15:
-			if(m_oak_idx > 0x3a)
-				break;
-			m_oak_regs[m_oak_idx] = data;
-			switch(m_oak_idx)
-			{
-				case 0x21:
-					svga.rgb8_en = BIT(data, 2);
-					break;
-				case 0x33:
-					vga.crtc.no_wrap = BIT(data, 0);
-					break;
-			}
-			break;
-		default:
-			if (get_crtc_port() == 0x3d0)
-				vga_device::port_03d0_w(offset,data);
-			break;
-	}
-}
-
-uint16_t oak_oti111_vga_device::offset()
-{
-	uint16_t off = svga_device::offset();
-
-	if (svga.rgb8_en || svga.rgb15_en || svga.rgb16_en || svga.rgb32_en)
-		return vga.crtc.offset << 4;  // TODO: there must a register to control this
-	else
-		return off;
 }

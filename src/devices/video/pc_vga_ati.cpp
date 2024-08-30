@@ -12,7 +12,7 @@
 
 #define LOGWARN(...)           LOGMASKED(LOG_WARN, __VA_ARGS__)
 
-DEFINE_DEVICE_TYPE(ATI_VGA,    ati_vga_device,    "ati_vga",    "ATi VGA")
+DEFINE_DEVICE_TYPE(ATI_VGA,    ati_vga_device,    "ati_vga",    "ATi VGA i/f")
 
 ati_vga_device::ati_vga_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
 	: ati_vga_device(mconfig, ATI_VGA, tag, owner, clock)
@@ -41,23 +41,6 @@ void ati_vga_device::device_add_mconfig(machine_config &config)
 {
 	MACH8(config, "8514a", 0).set_vga_owner();
 	EEPROM_93C46_16BIT(config, "ati_eeprom");
-}
-
-uint8_t ati_vga_device::port_03c0_r(offs_t offset)
-{
-	uint8_t data = 0xff;
-
-	switch(offset)
-	{
-	case 1:
-		if ((vga.attribute.index&0x1f) < sizeof(vga.attribute.data))
-			data = vga.attribute.data[vga.attribute.index&0x1f];
-		break;
-	default:
-		data = vga_device::port_03c0_r(offset);
-		break;
-	}
-	return data;
 }
 
 uint16_t ati_vga_device::offset()

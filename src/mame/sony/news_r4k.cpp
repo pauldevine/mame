@@ -108,8 +108,6 @@
 #include "machine/upd765.h"
 #include "machine/z80scc.h"
 
-#include "formats/pc_dsk.h"
-
 #define LOG_INTERRUPT (1U << 1)
 #define LOG_ALL_INTERRUPT (1U << 2)
 #define LOG_LED (1U << 3)
@@ -526,6 +524,8 @@ void news_r4k_state::machine_common(machine_config &config)
 	m_dmac->dma_w_cb<dmac3_device::CTRL0>().set(m_scsi0, FUNC(spifi3_device::dma_w));
 	m_dmac->dma_r_cb<dmac3_device::CTRL1>().set(m_scsi1, FUNC(spifi3_device::dma_r));
 	m_dmac->dma_w_cb<dmac3_device::CTRL1>().set(m_scsi1, FUNC(spifi3_device::dma_w));
+
+	SOFTWARE_LIST(config, "software_list").set_original("sony_news").set_filter("RISC,NWS5000");
 }
 
 void news_r4k_state::nws5000x(machine_config &config) { machine_common(config); }

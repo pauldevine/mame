@@ -222,6 +222,7 @@ private:
 	void write_sasi_req(int state);
 	uint8_t sasi_status_r();
 	void sasi_ctrl_w(uint8_t data);
+	void draw_text(bitmap_rgb32 &bitmap, uint32_t addr, int y, int wd, int pitch, int lr, int cursor_on, int cursor_addr, bool lower);
 
 //  uint8_t winram_r();
 //  void winram_w(uint8_t data);
@@ -258,6 +259,9 @@ protected:
 	uint8_t m_dma_autoinc[4];
 	int m_dack;
 
+	virtual uint8_t dma_read_byte(offs_t offset);
+	virtual void dma_write_byte(offs_t offset, uint8_t data);
+
 private:
 	void dmapg4_w(offs_t offset, uint8_t data);
 
@@ -265,8 +269,7 @@ private:
 
 	void dma_hrq_changed(int state);
 	void tc_w(int state);
-	uint8_t dma_read_byte(offs_t offset);
-	void dma_write_byte(offs_t offset, uint8_t data);
+
 	void dack0_w(int state);
 	void dack1_w(int state);
 	void dack2_w(int state);
@@ -338,7 +341,7 @@ protected:
 		uint8_t prev_dx = 0, prev_dy = 0;
 		uint8_t freq_reg = 0;
 		uint8_t freq_index = 0;
-	}m_mouse;
+	} m_mouse;
 
 private:
 	u8 ppi_mouse_porta_r();
@@ -413,6 +416,7 @@ protected:
 
 	void ppi_sys_dac_portc_w(uint8_t data);
 	virtual u8 ppi_prn_portb_r() override;
+	uint32_t a20_286(bool state);
 
 	DECLARE_MACHINE_START(pc9801rs);
 	DECLARE_MACHINE_RESET(pc9801rs);
@@ -421,8 +425,14 @@ protected:
 	u8 m_dma_access_ctrl = 0;
 	u8 m_ide_sel = 0;
 
+	virtual uint8_t dma_read_byte(offs_t offset) override;
+	virtual void dma_write_byte(offs_t offset, uint8_t data) override;
+
 	// starting from PC9801VF/U buzzer is substituted with a DAC1BIT
 	bool m_dac1bit_disable;
+
+	uint8_t pc9801rs_knjram_r(offs_t offset);
+	void pc9801rs_knjram_w(offs_t offset, uint8_t data);
 
 	required_ioport m_dsw3;
 private:
@@ -430,10 +440,6 @@ private:
 //  optional_device<dac_1bit_device> m_dac1bit;
 	required_device<speaker_sound_device> m_dac1bit;
 
-	uint32_t a20_286(bool state);
-
-	uint8_t pc9801rs_knjram_r(offs_t offset);
-	void pc9801rs_knjram_w(offs_t offset, uint8_t data);
 	void pc9801rs_bank_w(offs_t offset, uint8_t data);
 	uint8_t midi_r();
 
@@ -461,7 +467,7 @@ protected:
 	struct {
 		uint8_t pal_entry = 0;
 		uint8_t r[16]{}, g[16]{}, b[16]{};
-	}m_analog16;
+	} m_analog16;
 
 private:
 	// EGC, PC9801VX onward

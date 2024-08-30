@@ -4,8 +4,6 @@
 
     ACT Apricot FP
 
-    preliminary driver by Angelo Salese
-
 
 11/09/2011 - modernised. The portable doesn't seem to have
              scroll registers, and it sets the palette to black.
@@ -158,8 +156,6 @@ private:
 
 	void fp_io(address_map &map);
 	void fp_mem(address_map &map);
-	void sound_io(address_map &map);
-	void sound_mem(address_map &map);
 };
 
 
@@ -456,16 +452,6 @@ void fp_state::fp_io(address_map &map)
 }
 
 
-//-------------------------------------------------
-//  ADDRESS_MAP( sound_mem )
-//-------------------------------------------------
-
-void fp_state::sound_mem(address_map &map)
-{
-	map(0xf000, 0xffff).rom().region(HD63B01V1_TAG, 0);
-}
-
-
 
 //**************************************************************************
 //  INPUT PORTS
@@ -576,7 +562,6 @@ void fp_state::fp(machine_config &config)
 	m_maincpu->set_irq_acknowledge_callback(I8259A_TAG, FUNC(pic8259_device::inta_cb));
 
 	HD6301V1(config, m_soundcpu, 2000000);
-	m_soundcpu->set_addrmap(AS_PROGRAM, &fp_state::sound_mem);
 	m_soundcpu->set_disable();
 
 	/* video hardware */

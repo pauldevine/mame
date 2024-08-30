@@ -166,8 +166,6 @@ private:
 };
 
 
-// video
-
 void jailbrek_state::palette(palette_device &palette) const
 {
 	const uint8_t *color_prom = memregion("proms")->base();
@@ -279,8 +277,6 @@ uint32_t jailbrek_state::screen_update(screen_device &screen, bitmap_ind16 &bitm
 }
 
 
-// machine
-
 void jailbrek_state::ctrl_w(uint8_t data)
 {
 	m_nmi_enable = data & 0x01;
@@ -314,7 +310,7 @@ uint8_t jailbrek_state::speech_r()
 
 void jailbrek_state::speech_w(uint8_t data)
 {
-	// bit 0 could be latch direction like in yiear
+	// bit 0 is latch direction like in yiear
 	m_vlm->st((data >> 1) & 1);
 	m_vlm->rst((data >> 2) & 1);
 }

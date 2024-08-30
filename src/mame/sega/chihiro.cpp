@@ -61,7 +61,7 @@ GD build date
 |*| 2006     | Sega Network Taisen Mahjong MJ 3 (Rev F)             | Sega                     | GDROM  | GDX-0017F  | 317-0414-JPN |
 | | 2005     | Sega Club Golf 2006: Next Tours                      | Sega                     | GDROM  | GDX-0018   |              |
 |*| 20051107 | Sega Club Golf 2006: Next Tours (Rev A)              | Sega                     | GDROM  | GDX-0018A  | 317-0428-JPN |
-| | 2005     | Firmware Update For MJ 3                             | Sega                     | GDROM  | GDX-0019   |              |
+|*| 20050905 | Firmware Update For MJ 3                             | Sega                     | GDROM  | GDX-0019   | 317-0414-JPN |
 | | 200?     | Sega Club Golf 2006                                  | Sega                     | GDROM  | GDX-0020   |              |
 | | 2006     | Sega Network Taisen Mahjong MJ 3 Evolution           | Sega                     | GDROM  | GDX-0021   | 317-0457-JPN |
 |*| 20070217 | Sega Network Taisen Mahjong MJ 3 Evolution (Rev A)   | Sega                     | GDROM  | GDX-0021A  | 317-0457-JPN |
@@ -430,15 +430,15 @@ Thanks to Alex, Mr Mudkips, and Philip Burke for this info.
 
 #include "emu.h"
 
+#include "jvs13551.h"
 #include "xbox_pci.h"
 #include "xbox.h"
 
 #include "machine/pci.h"
 #include "machine/idectrl.h"
 
-#include "bus/ata/idehd.h"
+#include "bus/ata/hdd.h"
 #include "cpu/i386/i386.h"
-#include "jvs13551.h"
 #include "machine/jvshost.h"
 #include "naomigd.h"
 
@@ -1506,22 +1506,46 @@ void ohci_hlean2131sc_device::device_start()
 
 // ======================> ide_baseboard_device
 
-class ide_baseboard_device : public ata_mass_storage_device
+class ide_baseboard_device : public ata_mass_storage_device_base, public device_ata_interface
 {
 public:
 	// construction/destruction
 	ide_baseboard_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
 
+	// device_ata_interface implementation
+	virtual uint16_t read_dma() override { return dma_r(); }
+	virtual uint16_t read_cs0(offs_t offset, uint16_t mem_mask) override { return command_r(offset); }
+	virtual uint16_t read_cs1(offs_t offset, uint16_t mem_mask) override { return control_r(offset); }
+
+	virtual void write_dma(uint16_t data) override { dma_w(data); }
+	virtual void write_cs0(offs_t offset, uint16_t data, uint16_t mem_mask) override { command_w(offset, data); }
+	virtual void write_cs1(offs_t offset, uint16_t data, uint16_t mem_mask) override { control_w(offset, data); }
+
+	virtual void write_dmack(int state) override { set_dmack_in(state); }
+	virtual void write_csel(int state) override { set_csel_in(state); }
+	virtual void write_dasp(int state) override { set_dasp_in(state); }
+	virtual void write_pdiag(int state) override { set_pdiag_in(state); }
+
+	// ata_mass_storage_device_base implementation
 	virtual int  read_sector(uint32_t lba, void *buffer) override;
 	virtual int  write_sector(uint32_t lba, const void *buffer) override;
+
 protected:
-	// device-level overrides
+	// device_t implementation
 	virtual void device_start() override;
 	virtual void device_reset() override;
+
 	uint8_t read_buffer[0x20]{};
 	uint8_t write_buffer[0x20]{};
 	chihiro_state *chihirosystem{};
 	static const int size_factor = 2;
+
+private:
+	// ata_hle_device_base implementation
+	virtual void set_irq_out(int state) override { device_ata_interface::set_irq(state); }
+	virtual void set_dmarq_out(int state) override { device_ata_interface::set_dmarq(state); }
+	virtual void set_dasp_out(int state) override { device_ata_interface::set_dasp(state); }
+	virtual void set_pdiag_out(int state) override { device_ata_interface::set_pdiag(state); }
 };
 
 //**************************************************************************
@@ -1536,7 +1560,8 @@ DEFINE_DEVICE_TYPE(IDE_BASEBOARD, ide_baseboard_device, "ide_baseboard", "IDE Ba
 //-------------------------------------------------
 
 ide_baseboard_device::ide_baseboard_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
-	: ata_mass_storage_device(mconfig, IDE_BASEBOARD, tag, owner, clock)
+	: ata_mass_storage_device_base(mconfig, IDE_BASEBOARD, tag, owner, clock)
+	, device_ata_interface(mconfig, *this)
 {
 }
 
@@ -1546,7 +1571,7 @@ ide_baseboard_device::ide_baseboard_device(const machine_config &mconfig, const 
 
 void ide_baseboard_device::device_start()
 {
-	ata_mass_storage_device::device_start();
+	ata_mass_storage_device_base::device_start();
 	chihirosystem = machine().driver_data<chihiro_state>();
 	// savestates
 	save_item(NAME(read_buffer));
@@ -1568,7 +1593,7 @@ void ide_baseboard_device::device_reset()
 		m_can_identify_device = 1;
 	}
 
-	ata_mass_storage_device::device_reset();
+	ata_mass_storage_device_base::device_reset();
 }
 
 int ide_baseboard_device::read_sector(uint32_t lba, void *buffer)
@@ -1754,7 +1779,7 @@ void chihiro_state::chihiro_map_io(address_map &map)
 	map(0x4000, 0x40ff).rw(FUNC(chihiro_state::mediaboard_r), FUNC(chihiro_state::mediaboard_w));
 }
 
-static INPUT_PORTS_START(chihiro)
+static INPUT_PORTS_START( chihiro )
 	PORT_START("TILT")
 	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_TILT)
 	PORT_BIT(0x7f, IP_ACTIVE_HIGH, IPT_UNUSED)
@@ -1811,7 +1836,7 @@ static INPUT_PORTS_START(chihiro)
 
 	PORT_START("A7")
 	PORT_BIT(0x87ff, IP_ACTIVE_LOW, IPT_UNUSED)
-	INPUT_PORTS_END
+INPUT_PORTS_END
 
 void chihiro_state::machine_start()
 {
@@ -2325,6 +2350,16 @@ ROM_START( mj3 )
 	ROM_LOAD( "317-0414-jpn.pic", 0x000000, 0x004000, CRC(27d1c541) SHA1(c85a8229dd769af02ab43c97f09f995743cdb315) )
 ROM_END
 
+ROM_START( mj3up )
+	CHIHIRO_BIOS
+
+	DISK_REGION( "gdrom" )
+	DISK_IMAGE_READONLY( "gdx-0019", 0, SHA1(39ac33e857a6f66814c8fc5487705dbf43d47888) )
+
+	ROM_REGION( 0x4000, "pic", ROMREGION_ERASEFF)
+	ROM_LOAD( "317-0414-jpn.pic", 0x000000, 0x004000, CRC(27d1c541) SHA1(c85a8229dd769af02ab43c97f09f995743cdb315) )
+ROM_END
+
 ROM_START( scg06nt )
 	CHIHIRO_BIOS
 
@@ -2608,7 +2643,7 @@ ROM_END
 /* 0017F */ GAME( 2006, mj3,      chihiro,  chihirogd,    chihiro, chihiro_state, empty_init, ROT0, "Sega",                     "Sega Network Taisen Mahjong MJ 3 (Rev F) (GDX-0017F)", MACHINE_NO_SOUND|MACHINE_NOT_WORKING )
 // 0018     GAME( 2005, scg06nto, scg06nt,  chihirogd,    chihiro, chihiro_state, empty_init, ROT0, "Sega",                     "Sega Club Golf 2006 Next Tours (GDX-0018)", MACHINE_NO_SOUND|MACHINE_NOT_WORKING )
 /* 0018A */ GAME( 2005, scg06nt,  chihiro,  chihirogd,    chihiro, chihiro_state, empty_init, ROT0, "Sega",                     "Sega Club Golf 2006 Next Tours (Rev A) (GDX-0018A)", MACHINE_NO_SOUND|MACHINE_NOT_WORKING )
-// 0019  Firmware Update For MJ 3
+/* 0019  */ GAME( 2005, mj3up,    chihiro,  chihirogd,    chihiro, chihiro_state, empty_init, ROT0, "Sega",                     "Sega Network Taisen Mahjong MJ 3 Firmware Update (GDX-0019)", MACHINE_NO_SOUND|MACHINE_NOT_WORKING )
 // 0020  Sega Golf Club 2006
 // 0021     GAME( 2006, mj3evoo,  mj3evo,    chihirogd,   chihiro, chihiro_state, empty_init, ROT0, "Sega",                     "Sega Network Taisen Mahjong MJ 3 Evolution (GDX-0021)", MACHINE_NO_SOUND|MACHINE_NOT_WORKING )
 /* 0021A */ GAME( 2007, mj3evoa,  mj3evo,    chihirogd,   chihiro, chihiro_state, empty_init, ROT0, "Sega",                     "Sega Network Taisen Mahjong MJ 3 Evolution (Rev A) (GDX-0021A)", MACHINE_NO_SOUND|MACHINE_NOT_WORKING )

@@ -53,9 +53,6 @@ DECLARE_DEVICE_TYPE(MSX_SLOT_DISK11_WD2793, msx_slot_disk11_wd2793_device)
 
 class msx_slot_disk_device : public msx_slot_rom_device
 {
-public:
-	int get_nr_drives() const { return m_nr_drives; }
-
 protected:
 	static constexpr int NO_DRIVES = 0;
 	static constexpr int DRIVES_1 = 1;
@@ -316,6 +313,16 @@ public:
 protected:
 	virtual void device_add_mconfig(machine_config &config) override;
 	virtual void device_start() override;
+
+private:
+	u8 bank_r();
+	void bank_w(u8 bank);
+	u8 media_change_r();
+	u8 unk_7ffc_r();
+	u8 unk_7ffd_r();
+	u8 unk_7fff_r();
+
+	memory_bank_creator m_rombank;
 };
 
 

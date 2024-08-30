@@ -33,8 +33,11 @@
 #include "bus/rs232/terminal.h"
 #include "cpu/i386/athlon.h"
 #include "machine/pci-ide.h"
+#include "machine/pckeybrd.h"
 #include "bus/isa/isa.h"
-#include "video/virge_pci.h"
+#include "bus/pci/virge_pci.h"
+
+#include "formats/naslite_dsk.h"
 
 
 #if 1
@@ -94,8 +97,7 @@ void crush11_host_device::device_start()
 {
 	pci_host_device::device_start();
 	set_multifunction_device(true);
-	memory_space = &cpu->space(AS_DATA);
-	io_space = &cpu->space(AS_IO);
+	set_spaces(&cpu->space(AS_DATA), &cpu->space(AS_IO));
 
 	memory_window_start = 0;
 	memory_window_end = 0xffffffff;
@@ -457,6 +459,10 @@ void it8703f_device::device_add_mconfig(machine_config &config)
 	m_kbdc->input_buffer_full_callback().set(FUNC(it8703f_device::irq_keyboard_w));
 	m_kbdc->system_reset_callback().set(FUNC(it8703f_device::kbdp20_gp20_reset_w));
 	m_kbdc->gate_a20_callback().set(FUNC(it8703f_device::kbdp21_gp25_gatea20_w));
+	m_kbdc->set_keyboard_tag("at_keyboard");
+
+	at_keyboard_device &at_keyb(AT_KEYB(config, "at_keyboard", pc_keyboard_device::KEYBOARD_TYPE::AT, 1));
+	at_keyb.keypress().set(m_kbdc, FUNC(kbdc8042_device::keyboard_w));
 }
 
 uint8_t it8703f_device::read_it8703f(offs_t offset)
@@ -1232,7 +1238,7 @@ void nforcepc_state::nforcepc(machine_config &config)
 	ide.subdevice<ide_controller_32_device>("ide1")->options(ata_devices, "hdd", nullptr, true);
 	ide.subdevice<ide_controller_32_device>("ide2")->options(ata_devices, "cdrom", nullptr, true);
 	NV2A_AGP(config, "pci:1e.0", 0, 0x10de01b7, 0xb2); // 10de:01b7 NVIDIA Corporation nForce AGP to PCI Bridge
-	VIRGEDX_PCI(config, "pci:0a.0", 0);
+	PCI_SLOT(config, "pci:1", pci_cards, 10, 0, 1, 2, 3, "virgedx");
 	SST_49LF020(config, "bios", 0);
 
 	FLOPPY_CONNECTOR(config, "pci:01.0:0:fdc:0", pc_hd_floppies, "35hd", floppy_formats);

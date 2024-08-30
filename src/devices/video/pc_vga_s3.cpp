@@ -21,36 +21,41 @@ enum
 	MACH8_DRAWING_SCAN
 };
 
+DEFINE_DEVICE_TYPE(S3_VISION864_VGA,  s3vision864_vga_device,  "s3_86c864_vga",     "S3 86c864 Vision864 VGA i/f")
+DEFINE_DEVICE_TYPE(S3_VISION964_VGA,  s3vision964_vga_device,  "s3_86c964_vga",     "S3 86c964 Vision964 VGA i/f")
+DEFINE_DEVICE_TYPE(S3_VISION968_VGA,  s3vision968_vga_device,  "s3_86c968_vga",     "S3 86c968 Vision968 VGA i/f")
+DEFINE_DEVICE_TYPE(S3_TRIO64_VGA,     s3trio64_vga_device,     "s3_86c764_vga",     "S3 86c764 Trio64 VGA i/f")
 
-DEFINE_DEVICE_TYPE(S3_VGA,     s3_vga_device,     "s3_vga",     "S3 Graphics VGA")
-
-s3_vga_device::s3_vga_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
-	: s3_vga_device(mconfig, S3_VGA, tag, owner, clock)
+s3vision864_vga_device::s3vision864_vga_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: s3vision864_vga_device(mconfig, S3_VISION864_VGA, tag, owner, clock)
 {
 }
 
-s3_vga_device::s3_vga_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock)
+s3vision864_vga_device::s3vision864_vga_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock)
 	: svga_device(mconfig, type, tag, owner, clock)
 {
+	m_crtc_space_config = address_space_config("crtc_regs", ENDIANNESS_LITTLE, 8, 8, 0, address_map_constructor(FUNC(s3vision864_vga_device::crtc_map), this));
+	m_seq_space_config = address_space_config("sequencer_regs", ENDIANNESS_LITTLE, 8, 8, 0, address_map_constructor(FUNC(s3vision864_vga_device::sequencer_map), this));
 }
 
-void s3_vga_device::device_add_mconfig(machine_config &config)
+void s3vision864_vga_device::device_add_mconfig(machine_config &config)
 {
 	IBM8514A(config, "8514a", 0).set_vga_owner();
 }
 
-TIMER_CALLBACK_MEMBER(s3_vga_device::vblank_timer_cb)
+uint32_t s3vision864_vga_device::latch_start_addr()
 {
-	// not sure if this is correct, but XF86_S3 seems to expect the viewport scrolling to be faster
 	if(s3.memory_config & 0x08)
-		vga.crtc.start_addr = vga.crtc.start_addr_latch << 2;
-	else
-		vga.crtc.start_addr = vga.crtc.start_addr_latch;
-	vga.attribute.pel_shift = vga.attribute.pel_shift_latch;
-	m_vblank_timer->adjust( screen().time_until_pos(vga.crtc.vert_blank_start + vga.crtc.vert_blank_end) );
+	{
+		// - SDD scrolling test expects a << 2 for 8bpp and no shift for anything else
+		// - Slackware 3.x XF86_S3 expect a << 2 shift (to be confirmed)
+		// - przonegd expect no shift (RGB16)
+		return vga.crtc.start_addr_latch << (svga.rgb8_en ? 2 : 0);
+	}
+	return vga.crtc.start_addr_latch;
 }
 
-void s3_vga_device::device_start()
+void s3vision864_vga_device::device_start()
 {
 	svga_device::device_start();
 	memset(&s3, 0, sizeof(s3));
@@ -62,32 +67,36 @@ void s3_vga_device::device_start()
 		s3.cursor_bg[x] = 0x00;
 	}
 	m_8514 = subdevice<ibm8514a_device>("8514a");
-	// set device ID
-	s3.id_high = 0x88;  // CR2D
-	s3.id_low = 0x11;   // CR2E
-	s3.revision = 0x00; // CR2F
-	s3.id_cr30 = 0xe1;  // CR30
+
+	s3.id_high = s3.id_low = s3.revision = 0; // <undefined>
+	s3.id_cr30 = 0xc1;
 }
 
-void s3_vga_device::device_reset()
+void s3vision864_vga_device::device_reset()
 {
 	vga_device::device_reset();
 	// Power-on strapping bits.  Sampled at reset, but can be modified later.
 	// These are just assumed defaults.
+	// TODO: expose as configuration option (PD pins)
 	s3.strapping = 0x000f0b1e;
 	s3.sr10 = 0x42;
 	s3.sr11 = 0x41;
 }
 
-uint16_t s3_vga_device::offset()
+u16 s3vision864_vga_device::line_compare_mask()
 {
-	//popmessage("Offset: %04x  %s %s %s",vga.crtc.offset,vga.crtc.dw?"DW":"--",vga.crtc.word_mode?"BYTE":"WORD",(s3.memory_config & 0x08)?"31":"--");
+	// TODO: pinpoint condition
+	return svga.rgb8_en ? 0x7ff : 0x3ff;
+}
+
+uint16_t s3vision864_vga_device::offset()
+{
 	if(s3.memory_config & 0x08)
 		return vga.crtc.offset << 3;
 	return vga_device::offset();
 }
 
-void s3_vga_device::s3_define_video_mode()
+void s3vision864_vga_device::s3_define_video_mode()
 {
 	int divisor = 1;
 	int xtal = ((vga.miscellaneous_output & 0xc) ? XTAL(28'636'363) : XTAL(25'174'800)).value();
@@ -106,17 +115,32 @@ void s3_vga_device::s3_define_video_mode()
 		svga.rgb15_en = 0;
 		svga.rgb16_en = 0;
 		svga.rgb32_en = 0;
+		// FIXME: vision864 has only first 7 modes
 		switch((s3.ext_misc_ctrl_2) >> 4)
 		{
+			// 0001 Mode 8: 2x 8-bit 1 VCLK/2 pixels
 			case 0x01: svga.rgb8_en = 1; break;
+			// 0010 Mode 1: 15-bit 2 VCLK/pixel
+			case 0x02: svga.rgb15_en = 1; break;
+			// 0011 Mode 9: 15-bit 1 VCLK/pixel
 			case 0x03: svga.rgb15_en = 1; divisor = 2; break;
+			// 0100 Mode 2: 24-bit 3 VCLK/pixel
+			case 0x04: svga.rgb24_en = 1; break;
+			// 0101 Mode 10: 16-bit 1 VCLK/pixel
 			case 0x05: svga.rgb16_en = 1; divisor = 2; break;
+			// 0110 Mode 3: 16-bit 2 VCLK/pixel
+			case 0x06: svga.rgb16_en = 1; break;
+			// 0111 Mode 11: 24/32-bit 2 VCLK/pixel
+			case 0x07: svga.rgb32_en = 1; divisor = 4; break;
 			case 0x0d: svga.rgb32_en = 1; divisor = 1; break;
-			default: fatalerror("TODO: S3 colour mode not implemented %02x\n",((s3.ext_misc_ctrl_2) >> 4));
+			default:
+				popmessage("pc_vga_s3: PA16B-COLOR-MODE %02x\n",((s3.ext_misc_ctrl_2) >> 4));
+				break;
 		}
 	}
 	else
 	{
+		// 0000: Mode 0 8-bit 1 VCLK/pixel
 		svga.rgb8_en = (s3.memory_config & 8) >> 3;
 		svga.rgb15_en = 0;
 		svga.rgb16_en = 0;
@@ -125,188 +149,140 @@ void s3_vga_device::s3_define_video_mode()
 	recompute_params_clock(divisor, xtal);
 }
 
-uint8_t s3_vga_device::crtc_reg_read(uint8_t index)
+void s3vision864_vga_device::refresh_pitch_offset()
 {
-	uint8_t res;
-
-	if(index <= 0x18)
-		res = svga_device::crtc_reg_read(index);
+	// bit 2 = bit 8 of offset register, but only if bits 4-5 of CR51 are 00h.
+	vga.crtc.offset &= 0xff;
+	if((s3.cr51 & 0x30) == 0)
+		vga.crtc.offset |= (s3.cr43 & 0x04) << 6;
 	else
-	{
-		switch(index)
-		{
-			case 0x2d:
-				res = s3.id_high;
-				break;
-			case 0x2e:
-				res = s3.id_low;
-				break;
-			case 0x2f:
-				res = s3.revision;
-				break;
-			case 0x30: // CR30 Chip ID/REV register
-				res = s3.id_cr30;
-				break;
-			case 0x31:
-				res = s3.memory_config;
-				break;
-			case 0x35:
-				res = s3.crt_reg_lock;
-				break;
-			case 0x36:  // Configuration register 1
-				res = s3.strapping & 0x000000ff;  // PCI (not really), Fast Page Mode DRAM
-				break;
-			case 0x37:  // Configuration register 2
-				res = (s3.strapping & 0x0000ff00) >> 8;  // enable chipset, 64k BIOS size, internal DCLK/MCLK
-				break;
-			case 0x38:
-				res = s3.reg_lock1;
-				break;
-			case 0x39:
-				res = s3.reg_lock2;
-				break;
-			case 0x42: // CR42 Mode Control
-				res = s3.cr42 & 0x0f;  // bit 5 set if interlaced, leave it unset for now.
-				break;
-			case 0x43:
-				res = s3.cr43;
-				break;
-			case 0x45:
-				res = s3.cursor_mode;
-				s3.cursor_fg_ptr = 0;
-				s3.cursor_bg_ptr = 0;
-				break;
-			case 0x46:
-				res = (s3.cursor_x & 0xff00) >> 8;
-				break;
-			case 0x47:
-				res = s3.cursor_x & 0x00ff;
-				break;
-			case 0x48:
-				res = (s3.cursor_y & 0xff00) >> 8;
-				break;
-			case 0x49:
-				res = s3.cursor_y & 0x00ff;
-				break;
-			case 0x4a:
-				res = s3.cursor_fg[s3.cursor_fg_ptr++];
-				s3.cursor_fg_ptr %= 4;
-				break;
-			case 0x4b:
-				res = s3.cursor_bg[s3.cursor_bg_ptr++];
-				s3.cursor_bg_ptr %= 4;
-				break;
-			case 0x4c:
-				res = (s3.cursor_start_addr & 0xff00) >> 8;
-				break;
-			case 0x4d:
-				res = s3.cursor_start_addr & 0x00ff;
-				break;
-			case 0x4e:
-				res = s3.cursor_pattern_x;
-				break;
-			case 0x4f:
-				res = s3.cursor_pattern_y;
-				break;
-			case 0x51:
-				res = (vga.crtc.start_addr_latch & 0x0c0000) >> 18;
-				res |= ((svga.bank_w & 0x30) >> 2);
-				res |= ((vga.crtc.offset & 0x0300) >> 4);
-				break;
-			case 0x53:
-				res = s3.cr53;
-				break;
-			case 0x55:
-				res = s3.extended_dac_ctrl;
-				break;
-			case 0x5c:
-				// if VGA dot clock is set to 3 (misc reg bits 2-3), then selected dot clock is read, otherwise read VGA clock select
-				if((vga.miscellaneous_output & 0xc) == 0x0c)
-					res = s3.cr42 & 0x0f;
-				else
-					res = (vga.miscellaneous_output & 0xc) >> 2;
-				break;
-			case 0x67:
-				res = s3.ext_misc_ctrl_2;
-				break;
-			case 0x68:  // Configuration register 3
-				res = (s3.strapping & 0x00ff0000) >> 16;  // no /CAS,/OE stretch time, 32-bit data bus size
-				break;
-			case 0x69:
-				res = vga.crtc.start_addr_latch >> 16;
-				break;
-			case 0x6a:
-				res = svga.bank_r & 0x7f;
-				break;
-			case 0x6f: // Configuration register 4 (Trio64V+)
-				res = (s3.strapping & 0xff000000) >> 24;  // LPB(?) mode, Serial port I/O at port 0xe8, Serial port I/O disabled (MMIO only), no WE delay
-				break;
-			default:
-				res = vga.crtc.data[index];
-				//machine().debug_break();
-				//printf("%02x\n",index);
-				break;
-		}
-	}
-
-	return res;
+		vga.crtc.offset |= (s3.cr51 & 0x30) << 4;
 }
 
-void s3_vga_device::crtc_reg_write(uint8_t index, uint8_t data)
+void s3vision864_vga_device::crtc_map(address_map &map)
 {
-	if(index <= 0x18)
-		svga_device::crtc_reg_write(index,data);
-	else
-	{
-		switch(index)
-		{
-			case 0x31: // CR31 Memory Configuration Register
-				s3.memory_config = data;
-				vga.crtc.start_addr_latch &= ~0x30000;
-				vga.crtc.start_addr_latch |= ((data & 0x30) << 12);
-				s3_define_video_mode();
-				break;
-			case 0x35:
-				if((s3.reg_lock1 & 0xc) != 8 || ((s3.reg_lock1 & 0xc0) == 0)) // lock register
-					return;
-				s3.crt_reg_lock = data;
-				svga.bank_w = data & 0xf;
-				svga.bank_r = svga.bank_w;
-				break;
-			case 0x36:
-				if(s3.reg_lock2 == 0xa5)
-				{
-					s3.strapping = (s3.strapping & 0xffffff00) | data;
-					LOG("CR36: Strapping data = %08x\n",s3.strapping);
-				}
-				break;
-			case 0x37:
-				if(s3.reg_lock2 == 0xa5)
-				{
-					s3.strapping = (s3.strapping & 0xffff00ff) | (data << 8);
-					LOG("CR37: Strapping data = %08x\n",s3.strapping);
-				}
-				break;
-			case 0x38:
-				s3.reg_lock1 = data;
-				break;
-			case 0x39:
-				/* TODO: reg lock mechanism */
-				s3.reg_lock2 = data;
-				break;
-			case 0x40:
-				s3.enable_8514 = data & 0x01;  // enable 8514/A registers (x2e8, x6e8, xae8, xee8)
-				break;
-			case 0x42:
-				s3.cr42 = data;  // bit 5 = interlace, bits 0-3 = dot clock (seems to be undocumented)
-				break;
-			case 0x43:
-				s3.cr43 = data;  // bit 2 = bit 8 of offset register, but only if bits 4-5 of CR51 are 00h.
-				vga.crtc.offset = (vga.crtc.offset & 0x00ff) | ((data & 0x04) << 6);
-				s3_define_video_mode();
-				break;
+	svga_device::crtc_map(map);
+	map(0x2d, 0x2d).lr8(
+		NAME([this] (offs_t offset) {
+			return s3.id_high;
+		})
+	);
+	map(0x2e, 0x2e).lr8(
+		NAME([this] (offs_t offset) {
+			return s3.id_low;
+		})
+	);
+	map(0x2f, 0x2f).lr8(
+		NAME([this] (offs_t offset) {
+			return s3.revision;
+		})
+	);
+	// CR30 Chip ID/REV register
+	map(0x30, 0x30).lr8(
+		NAME([this] (offs_t offset) {
+			return s3.id_cr30;
+		})
+	);
+	// CR31 Memory Configuration Register
+	map(0x31, 0x31).lrw8(
+		NAME([this] (offs_t offset) {
+			return s3.memory_config;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			s3.memory_config = data;
+			vga.crtc.start_addr_latch &= ~0x30000;
+			vga.crtc.start_addr_latch |= ((data & 0x30) << 12);
+			s3_define_video_mode();
+		})
+	);
+	// TODO: CR32, CR33 & CR34 (backward compatibility)
+	map(0x35, 0x35).lrw8(
+		NAME([this] (offs_t offset) {
+			return s3.crt_reg_lock;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			// lock register
+			if((s3.reg_lock1 & 0xc) != 8 || ((s3.reg_lock1 & 0xc0) == 0))
+				return;
+			s3.crt_reg_lock = data;
+			svga.bank_w = data & 0xf;
+			svga.bank_r = svga.bank_w;
+		})
+	);
+	// Configuration register 1
+	map(0x36, 0x36).lrw8(
+		NAME([this] (offs_t offset) {
+			// PCI (not really), Fast Page Mode DRAM
+			return s3.strapping & 0x000000ff;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			if(s3.reg_lock2 == 0xa5)
+			{
+				s3.strapping = (s3.strapping & 0xffffff00) | data;
+				LOG("CR36: Strapping data = %08x\n",s3.strapping);
+			}
+		})
+	);
+	// Configuration register 2
+	map(0x37, 0x37).lrw8(
+		NAME([this] (offs_t offset) {
+			return (s3.strapping & 0x0000ff00) >> 8;  // enable chipset, 64k BIOS size, internal DCLK/MCLK
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			// TODO: monitor ID at 7-5 (PD15-13)
+			if(s3.reg_lock2 == 0xa5)
+			{
+				s3.strapping = (s3.strapping & 0xffff00ff) | (data << 8);
+				LOG("CR37: Strapping data = %08x\n",s3.strapping);
+			}
+		})
+	);
+	map(0x38, 0x38).lrw8(
+		NAME([this] (offs_t offset) {
+			return s3.reg_lock1;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			s3.reg_lock1 = data;
+		})
+	);
+	map(0x39, 0x39).lrw8(
+		NAME([this] (offs_t offset) {
+			return s3.reg_lock2;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			// TODO: reg lock mechanism
+			s3.reg_lock2 = data;
+		})
+	);
+	map(0x40, 0x40).lw8(
+		NAME([this] (offs_t offset, u8 data) {
+			// enable 8514/A registers (x2e8, x6e8, xae8, xee8)
+			s3.enable_8514 = BIT(data, 0);
+		})
+	);
+	// CR42 Mode Control
+	map(0x42, 0x42).lrw8(
+		NAME([this] (offs_t offset) {
+			return s3.cr42;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			// bit 5 = interlace, bits 0-3 = dot clock (seems to be undocumented)
+			s3.cr42 = data;
+			s3_define_video_mode();
+		})
+	);
+	map(0x43, 0x43).lrw8(
+		NAME([this] (offs_t offset) {
+			return s3.cr43;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			s3.cr43 = data;  // bit 2 = bit 8 of offset register, but only if bits 4-5 of CR51 are 00h.
+			refresh_pitch_offset();
+			s3_define_video_mode();
+		})
+	);
 /*
-3d4h index 45h (R/W):  CR45 Hardware Graphics Cursor Mode
+CR45 Hardware Graphics Cursor Mode
 bit    0  HWGC ENB. Hardware Graphics Cursor Enable. Set to enable the
           HardWare Cursor in VGA and enhanced modes.
        1  (911/24) Delay Timing for Pattern Data Fetch
@@ -330,36 +306,66 @@ bit    0  HWGC ENB. Hardware Graphics Cursor Enable. Set to enable the
            /ODF) is the ODF output to a Bt485A compatible RamDAC (low for even
            fields and high for odd fields), if clear pin185 is the RS3 output.
  */
-			case 0x45:
-				s3.cursor_mode = data;
-				break;
+	map(0x45, 0x45).lrw8(
+		NAME([this] (offs_t offset) {
+			const u8 res = s3.cursor_mode;
+			if (!machine().side_effects_disabled())
+			{
+				s3.cursor_fg_ptr = 0;
+				s3.cursor_bg_ptr = 0;
+			}
+			return res;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			s3.cursor_mode = data;
+		})
+	);
 /*
-3d4h index 46h M(R/W):  CR46/7 Hardware Graphics Cursor Origin-X
+CR46/7 Hardware Graphics Cursor Origin-X
 bit 0-10  The HardWare Cursor X position. For 64k modes this value should be
           twice the actual X co-ordinate.
  */
-			case 0x46:
-				s3.cursor_x = (s3.cursor_x & 0x00ff) | (data << 8);
-				break;
-			case 0x47:
-				s3.cursor_x = (s3.cursor_x & 0xff00) | data;
-				break;
+	map(0x46, 0x46).lrw8(
+		NAME([this] (offs_t offset) {
+			return (s3.cursor_x & 0xff00) >> 8;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			s3.cursor_x = (s3.cursor_x & 0x00ff) | (data << 8);
+		})
+	);
+	map(0x47, 0x47).lrw8(
+		NAME([this] (offs_t offset) {
+			return s3.cursor_x & 0x00ff;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			s3.cursor_x = (s3.cursor_x & 0xff00) | data;
+		})
+	);
 /*
-3d4h index 48h M(R/W):  CR48/9 Hardware Graphics Cursor Origin-Y
+CR48/9 Hardware Graphics Cursor Origin-Y
 bit  0-9  (911/24) The HardWare Cursor Y position.
     0-10  (80x +) The HardWare Cursor Y position.
 Note: The position is activated when the high byte of the Y coordinate (index
       48h) is written, so this byte should be written last (not 911/924 ?)
  */
-			case 0x48:
-				s3.cursor_y = (s3.cursor_y & 0x00ff) | (data << 8);
-				break;
-			case 0x49:
-				s3.cursor_y = (s3.cursor_y & 0xff00) | data;
-				break;
-
+	map(0x48, 0x48).lrw8(
+		NAME([this] (offs_t offset) {
+			return (s3.cursor_y & 0xff00) >> 8;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			s3.cursor_y = (s3.cursor_y & 0x00ff) | (data << 8);
+		})
+	);
+	map(0x49, 0x49).lrw8(
+		NAME([this] (offs_t offset) {
+			return s3.cursor_y & 0x00ff;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			s3.cursor_y = (s3.cursor_y & 0xff00) | data;
+		})
+	);
 /*
-3d4h index 4Ah (R/W):  Hardware Graphics Cursor Foreground Stack       (80x +)
+CR4A Hardware Graphics Cursor Foreground Stack       (80x +)
 bit  0-7  The Foreground Cursor color. Three bytes (4 for the 864/964) are
           stacked here. When the Cursor Mode register (3d4h index 45h) is read
           the stackpointer is reset. When a byte is written the byte is
@@ -368,12 +374,23 @@ bit  0-7  The Foreground Cursor color. Three bytes (4 for the 864/964) are
           other two(3) only when Hardware Cursor Horizontal Stretch (3d4h
           index 45h bit 2-3) is enabled.
  */
-			case 0x4a:
-				s3.cursor_fg[s3.cursor_fg_ptr++] = data;
+	map(0x4a, 0x4a).lrw8(
+		NAME([this] (offs_t offset) {
+			const u8 res = s3.cursor_fg[s3.cursor_fg_ptr];
+			if (!machine().side_effects_disabled())
+			{
+				s3.cursor_fg_ptr++;
 				s3.cursor_fg_ptr %= 4;
-				break;
+			}
+			return res;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			s3.cursor_fg[s3.cursor_fg_ptr++] = data;
+			s3.cursor_fg_ptr %= 4;
+		})
+	);
 /*
-3d4h index 4Bh (R/W):  Hardware Graphics Cursor Background Stack       (80x +)
+CR4B Hardware Graphics Cursor Background Stack       (80x +)
 bit  0-7  The Background Cursor color. Three bytes (4 for the 864/964) are
           stacked here. When the Cursor Mode register (3d4h index 45h) is read
           the stackpointer is reset. When a byte is written the byte is
@@ -382,12 +399,23 @@ bit  0-7  The Background Cursor color. Three bytes (4 for the 864/964) are
           other two(3) only when Hardware Cursor Horizontal Stretch (3d4h
           index 45h bit 2-3) is enabled.
  */
-			case 0x4b:
-				s3.cursor_bg[s3.cursor_bg_ptr++] = data;
+	map(0x4b, 0x4b).lrw8(
+		NAME([this] (offs_t offset) {
+			const u8 res = s3.cursor_bg[s3.cursor_bg_ptr];
+			if (!machine().side_effects_disabled())
+			{
+				s3.cursor_bg_ptr++;
 				s3.cursor_bg_ptr %= 4;
-				break;
+			}
+			return res;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			s3.cursor_bg[s3.cursor_bg_ptr++] = data;
+			s3.cursor_bg_ptr %= 4;
+		})
+	);
 /*
-3d4h index 4Ch M(R/W):  CR4C/D Hardware Graphics Cursor Storage Start Address
+CR4C/D Hardware Graphics Cursor Storage Start Address
 bit  0-9  (911,924) HCS_STADR. Hardware Graphics Cursor Storage Start Address
     0-11  (80x,928) HWGC_STA. Hardware Graphics Cursor Storage Start Address
     0-12  (864,964) HWGC_STA. Hardware Graphics Cursor Storage Start Address
@@ -408,44 +436,76 @@ bit  0-9  (911,924) HCS_STADR. Hardware Graphics Cursor Storage Start Address
           (801/5,928) For Hi/True color modes use the Horizontal Stretch bits
             (3d4h index 45h bits 2 and 3).
  */
-			case 0x4c:
-				s3.cursor_start_addr = (s3.cursor_start_addr & 0x00ff) | (data << 8);
-				popmessage("HW Cursor Data Address %04x\n",s3.cursor_start_addr);
-				break;
-			case 0x4d:
-				s3.cursor_start_addr = (s3.cursor_start_addr & 0xff00) | data;
-				popmessage("HW Cursor Data Address %04x\n",s3.cursor_start_addr);
-				break;
+	map(0x4c, 0x4c).lrw8(
+		NAME([this] (offs_t offset) {
+			return (s3.cursor_start_addr & 0xff00) >> 8;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			s3.cursor_start_addr = (s3.cursor_start_addr & 0x00ff) | (data << 8);
+			//popmessage("HW Cursor Data Address %04x\n",s3.cursor_start_addr);
+		})
+	);
+	map(0x4d, 0x4d).lrw8(
+		NAME([this] (offs_t offset) {
+			return s3.cursor_start_addr & 0x00ff;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			s3.cursor_start_addr = (s3.cursor_start_addr & 0xff00) | data;
+			//popmessage("HW Cursor Data Address %04x\n",s3.cursor_start_addr);
+		})
+	);
 /*
-3d4h index 4Eh (R/W):  CR4E HGC Pattern Disp Start X-Pixel Position
+CR4E HGC Pattern Disp Start X-Pixel Position
 bit  0-5  Pattern Display Start X-Pixel Position.
  */
-			case 0x4e:
-				s3.cursor_pattern_x = data;
-				break;
+	map(0x4e, 0x4e).lrw8(
+		NAME([this] (offs_t offset) {
+			return s3.cursor_pattern_x;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			s3.cursor_pattern_x = data;
+		})
+	);
 /*
-3d4h index 4Fh (R/W):  CR4F HGC Pattern Disp Start Y-Pixel Position
+CR4F HGC Pattern Disp Start Y-Pixel Position
 bit  0-5  Pattern Display Start Y-Pixel Position.
  */
-			case 0x4f:
-				s3.cursor_pattern_y = data;
-				break;
-			case 0x51:
-				vga.crtc.start_addr_latch &= ~0xc0000;
-				vga.crtc.start_addr_latch |= ((data & 0x3) << 18);
-				svga.bank_w = (svga.bank_w & 0xcf) | ((data & 0x0c) << 2);
-				svga.bank_r = svga.bank_w;
-				if((data & 0x30) != 0x00)
-					vga.crtc.offset = (vga.crtc.offset & 0x00ff) | ((data & 0x30) << 4);
-				else
-					vga.crtc.offset = (vga.crtc.offset & 0x00ff) | ((s3.cr43 & 0x04) << 6);
-				s3_define_video_mode();
-				break;
-			case 0x53:
-				s3.cr53 = data;
-				break;
+	map(0x4f, 0x4f).lrw8(
+		NAME([this] (offs_t offset) {
+			return s3.cursor_pattern_y;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			s3.cursor_pattern_y = data;
+		})
+	);
+	map(0x51, 0x51).lrw8(
+		NAME([this] (offs_t offset) {
+			u8 res = (vga.crtc.start_addr_latch & 0x0c0000) >> 18;
+			res   |= ((svga.bank_w & 0x30) >> 2);
+//          res   |= ((vga.crtc.offset & 0x0300) >> 4);
+			res   |= (s3.cr51 & 0x30);
+			return res;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			s3.cr51 = data;
+			vga.crtc.start_addr_latch &= ~0xc0000;
+			vga.crtc.start_addr_latch |= ((data & 0x3) << 18);
+			svga.bank_w = (svga.bank_w & 0xcf) | ((data & 0x0c) << 2);
+			svga.bank_r = svga.bank_w;
+			refresh_pitch_offset();
+			s3_define_video_mode();
+		})
+	);
+	map(0x53, 0x53).lrw8(
+		NAME([this] (offs_t offset) {
+			return s3.cr53;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			s3.cr53 = data;
+		})
+	);
 /*
-3d4h index 55h (R/W):  Extended Video DAC Control Register             (80x +)
+CR55 Extended Video DAC Control Register             (80x +)
 bit 0-1  DAC Register Select Bits. Passed to the RS2 and RS3 pins on the
          RAMDAC, allowing access to all 8 or 16 registers on advanced RAMDACs.
          If this field is 0, 3d4h index 43h bit 1 is active.
@@ -465,11 +525,29 @@ bit 0-1  DAC Register Select Bits. Passed to the RS2 and RS3 pins on the
          (864/964) TOFF VCLK. Tri-State Off VCLK Output. VCLK output tri
           -stated if set
  */
-			case 0x55:
-				s3.extended_dac_ctrl = data;
-				break;
+	map(0x55, 0x55).lrw8(
+		NAME([this] (offs_t offset) {
+			return s3.extended_dac_ctrl;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			s3.extended_dac_ctrl = data;
+		})
+	);
+	// TODO: bits 7-4 (w/o?) for GPIO
+	map(0x5c, 0x5c).lr8(
+		NAME([this] (offs_t offset) {
+			u8 res = 0;
+			// if VGA dot clock is set to 3 (misc reg bits 2-3), then selected dot clock is read, otherwise read VGA clock select
+			if((vga.miscellaneous_output & 0xc) == 0x0c)
+				res = s3.cr42 & 0x0f;
+			else
+				res = (vga.miscellaneous_output & 0xc) >> 2;
+			return res;
+		})
+	);
+// TODO: following two registers must be read-backable
 /*
-3d4h index 5Dh (R/W):  Extended Horizontal Overflow Register           (80x +)
+CR5D Extended Horizontal Overflow Register           (80x +)
 bit    0  Horizontal Total bit 8. Bit 8 of the Horizontal Total register (3d4h
           index 0)
        1  Horizontal Display End bit 8. Bit 8 of the Horizontal Display End
@@ -489,17 +567,19 @@ bit    0  Horizontal Total bit 8. Bit 8 of the Horizontal Total register (3d4h
        7  (928,964) Bus-Grant Terminate Position bit 8. Bit 8 of the Bus Grant
             Termination register (3d4h index 5Fh).
 */
-			case 0x5d:
-				vga.crtc.horz_total = (vga.crtc.horz_total & 0xfeff) | ((data & 0x01) << 8);
-				vga.crtc.horz_disp_end = (vga.crtc.horz_disp_end & 0xfeff) | ((data & 0x02) << 7);
-				vga.crtc.horz_blank_start = (vga.crtc.horz_blank_start & 0xfeff) | ((data & 0x04) << 6);
-				vga.crtc.horz_blank_end = (vga.crtc.horz_blank_end & 0xffbf) | ((data & 0x08) << 3);
-				vga.crtc.horz_retrace_start = (vga.crtc.horz_retrace_start & 0xfeff) | ((data & 0x10) << 4);
-				vga.crtc.horz_retrace_end = (vga.crtc.horz_retrace_end & 0xffdf) | (data & 0x20);
-				s3_define_video_mode();
-				break;
+	map(0x5d, 0x5d).lw8(
+		NAME([this] (offs_t offset, u8 data) {
+			vga.crtc.horz_total = (vga.crtc.horz_total & 0xfeff) | ((data & 0x01) << 8);
+			vga.crtc.horz_disp_end = (vga.crtc.horz_disp_end & 0xfeff) | ((data & 0x02) << 7);
+			vga.crtc.horz_blank_start = (vga.crtc.horz_blank_start & 0xfeff) | ((data & 0x04) << 6);
+			vga.crtc.horz_blank_end = (vga.crtc.horz_blank_end & 0xffbf) | ((data & 0x08) << 3);
+			vga.crtc.horz_retrace_start = (vga.crtc.horz_retrace_start & 0xfeff) | ((data & 0x10) << 4);
+			vga.crtc.horz_retrace_end = (vga.crtc.horz_retrace_end & 0xffdf) | (data & 0x20);
+			s3_define_video_mode();
+		})
+	);
 /*
-3d4h index 5Eh (R/W):  Extended Vertical Overflow Register             (80x +)
+CR5E: Extended Vertical Overflow Register             (80x +)
 bit    0  Vertical Total bit 10. Bit 10 of the Vertical Total register (3d4h
           index 6). Bits 8 and 9 are in 3d4h index 7 bit 0 and 5.
        1  Vertical Display End bit 10. Bit 10 of the Vertical Display End
@@ -515,117 +595,109 @@ bit    0  Vertical Total bit 10. Bit 10 of the Vertical Total register (3d4h
           (3d4h index 18h). Bit 8 is in 3d4h index 7 bit 4 and bit 9 in 3d4h
           index 9 bit 6.
  */
-			case 0x5e:
-				vga.crtc.vert_total = (vga.crtc.vert_total & 0xfbff) | ((data & 0x01) << 10);
-				vga.crtc.vert_disp_end = (vga.crtc.vert_disp_end & 0xfbff) | ((data & 0x02) << 9);
-				vga.crtc.vert_blank_start = (vga.crtc.vert_blank_start & 0xfbff) | ((data & 0x04) << 8);
-				vga.crtc.vert_retrace_start = (vga.crtc.vert_retrace_start & 0xfbff) | ((data & 0x10) << 6);
-				vga.crtc.line_compare = (vga.crtc.line_compare & 0xfbff) | ((data & 0x40) << 4);
-				s3_define_video_mode();
-				break;
-			case 0x67:
-				s3.ext_misc_ctrl_2 = data;
-				s3_define_video_mode();
-				break;
-			case 0x68:
-				if(s3.reg_lock2 == 0xa5)
-				{
-					s3.strapping = (s3.strapping & 0xff00ffff) | (data << 16);
-					LOG("CR68: Strapping data = %08x\n",s3.strapping);
-				}
-				break;
-			case 0x69:
-				vga.crtc.start_addr_latch &= ~0x1f0000;
-				vga.crtc.start_addr_latch |= ((data & 0x1f) << 16);
-				s3_define_video_mode();
-				break;
-			case 0x6a:
-				svga.bank_w = data & 0x3f;
-				svga.bank_r = svga.bank_w;
-				break;
-			case 0x6f:
-				if(s3.reg_lock2 == 0xa5)
-				{
-					s3.strapping = (s3.strapping & 0x00ffffff) | (data << 24);
-					LOG("CR6F: Strapping data = %08x\n",s3.strapping);
-				}
-				break;
-			default:
-				LOG( "S3: 3D4 index %02x write %02x\n",index,data);
-				break;
-		}
-	}
+	map(0x5e, 0x5e).lw8(
+		NAME([this] (offs_t offset, u8 data) {
+			vga.crtc.vert_total = (vga.crtc.vert_total & 0xfbff) | ((data & 0x01) << 10);
+			vga.crtc.vert_disp_end = (vga.crtc.vert_disp_end & 0xfbff) | ((data & 0x02) << 9);
+			vga.crtc.vert_blank_start = (vga.crtc.vert_blank_start & 0xfbff) | ((data & 0x04) << 8);
+			vga.crtc.vert_retrace_start = (vga.crtc.vert_retrace_start & 0xfbff) | ((data & 0x10) << 6);
+			vga.crtc.line_compare = (vga.crtc.line_compare & 0xfbff) | ((data & 0x40) << 4);
+			s3_define_video_mode();
+		})
+	);
+	map(0x67, 0x67).lrw8(
+		NAME([this] (offs_t offset) {
+			return s3.ext_misc_ctrl_2;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			s3.ext_misc_ctrl_2 = data;
+			s3_define_video_mode();
+		})
+	);
+	map(0x68, 0x68).lrw8(
+		NAME([this] (offs_t offset) {  // Configuration register 3
+			// no /CAS,/OE stretch time, 32-bit data bus size
+			return (s3.strapping & 0x00ff0000) >> 16;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			if(s3.reg_lock2 == 0xa5)
+			{
+				s3.strapping = (s3.strapping & 0xff00ffff) | (data << 16);
+				LOG("CR68: Strapping data = %08x\n",s3.strapping);
+			}
+		})
+	);
+	map(0x69, 0x69).lrw8(
+		NAME([this] (offs_t offset) {
+			return vga.crtc.start_addr_latch >> 16;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			vga.crtc.start_addr_latch &= ~0x1f0000;
+			vga.crtc.start_addr_latch |= ((data & 0x1f) << 16);
+			s3_define_video_mode();
+		})
+	);
+	// TODO: doesn't match number of bits
+	map(0x6a, 0x6a).lrw8(
+		NAME([this] (offs_t offset) {
+			return svga.bank_r & 0x7f;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			svga.bank_w = data & 0x3f;
+			svga.bank_r = svga.bank_w;
+		})
+	);
+	// Configuration register 4 (Trio64V+)
+	map(0x6f, 0x6f).lrw8(
+		NAME([this] (offs_t offset) {
+			// LPB(?) mode, Serial port I/O at port 0xe8, Serial port I/O disabled (MMIO only), no WE delay
+			return (s3.strapping & 0xff000000) >> 24;
+		}),
+		NAME([this] (offs_t offset, u8 data) {
+			if(s3.reg_lock2 == 0xa5)
+			{
+				s3.strapping = (s3.strapping & 0x00ffffff) | (data << 24);
+				LOG("CR6F: Strapping data = %08x\n",s3.strapping);
+			}
+		})
+	);
 }
 
-uint8_t s3_vga_device::s3_seq_reg_read(uint8_t index)
+void s3vision864_vga_device::sequencer_map(address_map &map)
 {
-	uint8_t res = 0xff;
-
-	if(index <= 0x0c)
-		res = vga.sequencer.data[index];
-	else
-	{
-		switch(index)
-		{
-		case 0x10:
-			res = s3.sr10;
-			break;
-		case 0x11:
-			res = s3.sr11;
-			break;
-		case 0x12:
-			res = s3.sr12;
-			break;
-		case 0x13:
-			res = s3.sr13;
-			break;
-		case 0x15:
-			res = s3.sr15;
-			break;
-		case 0x17:
-			res = s3.sr17;  // CLKSYN test register
-			s3.sr17--;  // who knows what it should return, docs only say it defaults to 0, and is reserved for testing of the clock synthesiser
-			break;
-		}
-	}
-
-	return res;
-}
-
-void s3_vga_device::s3_seq_reg_write(uint8_t index, uint8_t data)
-{
-	if(index <= 0x0c)
-	{
-		vga.sequencer.data[vga.sequencer.index] = data;
-		seq_reg_write(vga.sequencer.index,data);
-	}
-	else
-	{
-		switch(index)
-		{
-		// Memory CLK PLL
-		case 0x10:
-			s3.sr10 = data;
-			break;
-		case 0x11:
-			s3.sr11 = data;
-			break;
-		// Video CLK PLL
-		case 0x12:
-			s3.sr12 = data;
-			break;
-		case 0x13:
-			s3.sr13 = data;
-			break;
-		case 0x15:
-			if(data & 0x02)  // load DCLK frequency (would normally have a small variable delay)
+	svga_device::sequencer_map(map);
+	// TODO: SR8 (unlocks SRD)
+	// Memory CLK PLL
+	map(0x10, 0x10).lrw8(
+		NAME([this] (offs_t offset) { return s3.sr10; }),
+		NAME([this] (offs_t offset, u8 data) { s3.sr10 = data; })
+	);
+	map(0x11, 0x11).lrw8(
+		NAME([this] (offs_t offset) { return s3.sr11; }),
+		NAME([this] (offs_t offset, u8 data) { s3.sr11 = data; })
+	);
+	// Video CLK PLL
+	map(0x12, 0x12).lrw8(
+		NAME([this] (offs_t offset) { return s3.sr12; }),
+		NAME([this] (offs_t offset, u8 data) { s3.sr12 = data; })
+	);
+	map(0x13, 0x13).lrw8(
+		NAME([this] (offs_t offset) { return s3.sr13; }),
+		NAME([this] (offs_t offset, u8 data) { s3.sr13 = data; })
+	);
+	map(0x15, 0x15).lrw8(
+		NAME([this] (offs_t offset) { return s3.sr15; }),
+		NAME([this] (offs_t offset, u8 data) {
+			// load DCLK frequency (would normally have a small variable delay)
+			if(data & 0x02)
 			{
 				s3.clk_pll_n = s3.sr12 & 0x1f;
 				s3.clk_pll_r = (s3.sr12 & 0x60) >> 5;
 				s3.clk_pll_m = s3.sr13 & 0x7f;
 				s3_define_video_mode();
 			}
-			if(data & 0x20)  // immediate DCLK/MCLK load
+			// immediate DCLK/MCLK load
+			if(data & 0x20)
 			{
 				s3.clk_pll_n = s3.sr12 & 0x1f;
 				s3.clk_pll_r = (s3.sr12 & 0x60) >> 5;
@@ -633,117 +705,21 @@ void s3_vga_device::s3_seq_reg_write(uint8_t index, uint8_t data)
 				s3_define_video_mode();
 			}
 			s3.sr15 = data;
-		}
-	}
+		})
+	),
+	map(0x17, 0x17).lr8(
+		NAME([this] (offs_t offset) {
+			// CLKSYN test register
+			const u8 res = s3.sr17;
+			// who knows what it should return, docs only say it defaults to 0, and is reserved for testing of the clock synthesiser
+			if (!machine().side_effects_disabled())
+				s3.sr17--;
+			return res;
+		})
+	);
 }
 
-
-
-uint8_t s3_vga_device::port_03b0_r(offs_t offset)
-{
-	uint8_t res = 0xff;
-
-	if (get_crtc_port() == 0x3b0)
-	{
-		switch(offset)
-		{
-			case 5:
-				res = s3_vga_device::crtc_reg_read(vga.crtc.index);
-				break;
-			default:
-				res = vga_device::port_03b0_r(offset);
-				break;
-		}
-	}
-
-	return res;
-}
-
-void s3_vga_device::port_03b0_w(offs_t offset, uint8_t data)
-{
-	if (get_crtc_port() == 0x3b0)
-	{
-		switch(offset)
-		{
-			case 5:
-				vga.crtc.data[vga.crtc.index] = data;
-				s3_vga_device::crtc_reg_write(vga.crtc.index,data);
-				break;
-			default:
-				vga_device::port_03b0_w(offset,data);
-				break;
-		}
-	}
-}
-
-uint8_t s3_vga_device::port_03c0_r(offs_t offset)
-{
-	uint8_t res;
-
-	switch(offset)
-	{
-		case 5:
-			res = s3_seq_reg_read(vga.sequencer.index);
-			break;
-		default:
-			res = vga_device::port_03c0_r(offset);
-			break;
-	}
-
-	return res;
-}
-
-void s3_vga_device::port_03c0_w(offs_t offset, uint8_t data)
-{
-	switch(offset)
-	{
-		case 5:
-			s3_seq_reg_write(vga.sequencer.index,data);
-			break;
-		default:
-			vga_device::port_03c0_w(offset,data);
-			break;
-	}
-}
-
-uint8_t s3_vga_device::port_03d0_r(offs_t offset)
-{
-	uint8_t res = 0xff;
-
-	if (get_crtc_port() == 0x3d0)
-	{
-		switch(offset)
-		{
-			case 5:
-				res = s3_vga_device::crtc_reg_read(vga.crtc.index);
-				break;
-			default:
-				res = vga_device::port_03d0_r(offset);
-				break;
-		}
-	}
-
-	return res;
-}
-
-void s3_vga_device::port_03d0_w(offs_t offset, uint8_t data)
-{
-	if (get_crtc_port() == 0x3d0)
-	{
-		switch(offset)
-		{
-			case 5:
-				vga.crtc.data[vga.crtc.index] = data;
-				crtc_reg_write(vga.crtc.index,data);
-				break;
-			default:
-				vga_device::port_03d0_w(offset,data);
-				break;
-		}
-	}
-}
-
-uint8_t s3_vga_device::mem_r(offs_t offset)
+uint8_t s3vision864_vga_device::mem_r(offs_t offset)
 {
 	if (svga.rgb8_en || svga.rgb15_en || svga.rgb16_en || svga.rgb32_en)
 	{
@@ -777,7 +753,7 @@ uint8_t s3_vga_device::mem_r(offs_t offset)
 		return 0xff;
 }
 
-void s3_vga_device::mem_w(offs_t offset, uint8_t data)
+void s3vision864_vga_device::mem_w(offs_t offset, uint8_t data)
 {
 	ibm8514a_device* dev = get_8514();
 	// bit 4 of CR53 enables memory-mapped I/O
@@ -1047,7 +1023,7 @@ void s3_vga_device::mem_w(offs_t offset, uint8_t data)
 }
 
 
-uint32_t s3_vga_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
+uint32_t s3vision864_vga_device::screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect)
 {
 	svga_device::screen_update(screen, bitmap, cliprect);
 
@@ -1169,4 +1145,77 @@ uint32_t s3_vga_device::screen_update(screen_device &screen, bitmap_rgb32 &bitma
 		}
 	}
 	return 0;
+}
+
+/******************
+ *
+ * Vision 964
+ *
+ *****************/
+
+s3vision964_vga_device::s3vision964_vga_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: s3vision964_vga_device(mconfig, S3_VISION964_VGA, tag, owner, clock)
+{
+}
+
+s3vision964_vga_device::s3vision964_vga_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock)
+	: s3vision864_vga_device(mconfig, type, tag, owner, clock)
+{
+}
+
+void s3vision964_vga_device::device_start()
+{
+	s3vision864_vga_device::device_start();
+	s3.id_high = s3.id_low = s3.revision = 0; // <undefined>
+	s3.id_cr30 = 0xd0;  // CR30, assume rev 0
+}
+
+/******************
+ *
+ * Vision968
+ *
+ *****************/
+
+s3vision968_vga_device::s3vision968_vga_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: s3vision968_vga_device(mconfig, S3_VISION968_VGA, tag, owner, clock)
+{
+}
+
+s3vision968_vga_device::s3vision968_vga_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock)
+	: s3vision964_vga_device(mconfig, type, tag, owner, clock)
+{
+}
+
+void s3vision968_vga_device::device_start()
+{
+	s3vision964_vga_device::device_start();
+	s3.id_high = 0x88;  // CR2D
+	s3.id_low = 0xf0;   // CR2E
+	s3.revision = 0x00; // CR2F
+	s3.id_cr30 = 0xe1;  // CR30
+}
+
+/******************
+ *
+ * Trio 64
+ *
+ *****************/
+
+s3trio64_vga_device::s3trio64_vga_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock)
+	: s3trio64_vga_device(mconfig, S3_TRIO64_VGA, tag, owner, clock)
+{
+}
+
+s3trio64_vga_device::s3trio64_vga_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock)
+	: s3vision968_vga_device(mconfig, type, tag, owner, clock)
+{
+}
+
+void s3trio64_vga_device::device_start()
+{
+	s3vision968_vga_device::device_start();
+	s3.id_high = 0x88;  // CR2D
+	s3.id_low = 0x11;   // CR2E
+	s3.revision = 0x00; // CR2F
+	s3.id_cr30 = 0xe1;  // CR30
 }

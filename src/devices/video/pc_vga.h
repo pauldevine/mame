@@ -13,14 +13,17 @@
 
 #pragma once
 
-#include "screen.h"
 #include "ibm8514a.h"
 
-class ibm8514a_device;
+#include "screen.h"
+
 
 // ======================> vga_device
 
-class vga_device : public device_t, public device_video_interface, public device_palette_interface
+class vga_device : public device_t
+				 , public device_video_interface
+				 , public device_palette_interface
+				 , public device_memory_interface
 {
 	friend class ibm8514a_device;
 
@@ -31,17 +34,12 @@ public:
 	virtual void zero();
 	virtual uint32_t screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
 
-	virtual uint8_t port_03b0_r(offs_t offset);
-	virtual void port_03b0_w(offs_t offset, uint8_t data);
-	virtual uint8_t port_03c0_r(offs_t offset);
-	virtual void port_03c0_w(offs_t offset, uint8_t data);
-	virtual uint8_t port_03d0_r(offs_t offset);
-	virtual void port_03d0_w(offs_t offset, uint8_t data);
+	void io_map(address_map &map);
+
 	virtual uint8_t mem_r(offs_t offset);
 	virtual void mem_w(offs_t offset, uint8_t data);
 	virtual uint8_t mem_linear_r(offs_t offset);
 	virtual void mem_linear_w(offs_t offset,uint8_t data);
-	virtual TIMER_CALLBACK_MEMBER(vblank_timer_cb);
 
 	void set_offset(uint16_t val) { vga.crtc.offset = val; }
 	void set_vram_size(size_t vram_size) { vga.svga_intf.vram_size = vram_size; }
@@ -66,6 +64,8 @@ protected:
 
 	vga_device(const machine_config &mconfig, device_type type, const char *tag, device_t *owner, uint32_t clock);
 
+	TIMER_CALLBACK_MEMBER(vblank_timer_cb);
+
 	// device-level overrides
 	virtual void device_start() override;
 	virtual void device_reset() override;
@@ -81,19 +81,55 @@ protected:
 	void vga_vh_mono(bitmap_rgb32 &bitmap, const rectangle &cliprect);
 	virtual uint8_t pc_vga_choosevideomode();
 	void recompute_params_clock(int divisor, int xtal);
-	virtual uint8_t crtc_reg_read(uint8_t index);
 	virtual void recompute_params();
-	virtual void crtc_reg_write(uint8_t index, uint8_t data);
-	virtual uint8_t seq_reg_read(uint8_t index);
-	virtual void seq_reg_write(uint8_t index, uint8_t data);
 	uint8_t vga_vblank();
-	uint8_t vga_crtc_r(offs_t offset);
-	void vga_crtc_w(offs_t offset, uint8_t data);
-	uint8_t gc_reg_read(uint8_t index);
-	void attribute_reg_write(uint8_t index, uint8_t data);
-	void gc_reg_write(uint8_t index,uint8_t data);
+
+	virtual space_config_vector memory_space_config() const override;
+
+	virtual void io_3bx_3dx_map(address_map &map);
+
+	u8 crtc_address_r(offs_t offset);
+	void crtc_address_w(offs_t offset, u8 data);
+	virtual u8 crtc_data_r(offs_t offset);
+	virtual void crtc_data_w(offs_t offset, u8 data);
+	u8 input_status_1_r(offs_t offset);
+	void feature_control_w(offs_t offset, u8 data);
+
+	virtual void io_3cx_map(address_map &map);
+
+	u8 atc_address_r(offs_t offset);
+	void atc_address_data_w(offs_t offset, u8 data);
+	u8 atc_data_r(offs_t offset);
+	u8 input_status_0_r(offs_t offset);
+	void miscellaneous_output_w(offs_t offset, u8 data);
+	u8 sequencer_address_r(offs_t offset);
+	void sequencer_address_w(offs_t offset, u8 data);
+	virtual u8 sequencer_data_r(offs_t offset);
+	virtual void sequencer_data_w(offs_t offset, u8 data);
+	u8 ramdac_mask_r(offs_t offset);
+	void ramdac_mask_w(offs_t offset, u8 data);
+	u8 ramdac_state_r(offs_t offset);
+	void ramdac_read_index_w(offs_t offset, u8 data);
+	u8 ramdac_write_index_r(offs_t offset);
+	void ramdac_write_index_w(offs_t offset, u8 data);
+	u8 ramdac_data_r(offs_t offset);
+	void ramdac_data_w(offs_t offset, u8 data);
+	u8 feature_control_r(offs_t offset);
+	u8 miscellaneous_output_r(offs_t offset);
+	virtual u8 gc_address_r(offs_t offset);
+	virtual void gc_address_w(offs_t offset, u8 data);
+	virtual u8 gc_data_r(offs_t offset);
+	virtual void gc_data_w(offs_t offset, u8 data);
+
+	virtual void crtc_map(address_map &map);
+	virtual void sequencer_map(address_map &map);
+	virtual void gc_map(address_map &map);
+	virtual void attribute_map(address_map &map);
+
+	// NOTE: do not use the subclassed result when determining pitch in SVGA modes.
+	// dw & word mode should apply to normal VGA modes only.
 	virtual uint16_t offset();
-	virtual uint32_t start_addr();
+	virtual uint32_t latch_start_addr() { return vga.crtc.start_addr_latch; }
 	virtual uint8_t vga_latch_write(int offs, uint8_t data);
 	inline uint8_t rotate_right(uint8_t val) { return (val >> vga.gc.rotate_count) | (val << (8 - vga.gc.rotate_count)); }
 	inline uint8_t vga_logical_op(uint8_t data, uint8_t plane, uint8_t mask)
@@ -118,6 +154,8 @@ protected:
 
 		return res;
 	}
+	virtual bool get_interlace_mode() { return false; }
+	virtual void palette_update();
 
 	struct vga_t
 	{
@@ -125,8 +163,6 @@ protected:
 		struct
 		{
 			size_t vram_size;
-			int seq_regcount;
-			int crtc_regcount;
 		} svga_intf;
 
 		std::unique_ptr<uint8_t []> memory;
@@ -245,6 +281,26 @@ protected:
 	required_ioport m_input_sense;
 
 	emu_timer *m_vblank_timer;
+
+	enum {
+		MAIN_IF_REG = 0,
+		CRTC_REG,
+		GC_REG,
+		SEQ_REG,
+		ATC_REG,
+		// pointer for subclasses to declare further spaces
+		EXT_REG
+	};
+
+	address_space_config m_main_if_space_config;
+	address_space_config m_crtc_space_config;
+	address_space_config m_gc_space_config;
+	address_space_config m_seq_space_config;
+	address_space_config m_atc_space_config;
+
+	bool m_ioas = false;
+private:
+	uint32_t start_addr();
 };
 
 
@@ -271,9 +327,10 @@ protected:
 	void svga_vh_rgb32(bitmap_rgb32 &bitmap, const rectangle &cliprect);
 	virtual uint8_t pc_vga_choosevideomode() override;
 	virtual void device_start() override;
+	virtual u16 line_compare_mask();
 	struct
 	{
-		uint8_t bank_r,bank_w;
+		uint8_t bank_r, bank_w;
 		uint8_t rgb8_en;
 		uint8_t rgb15_en;
 		uint8_t rgb16_en;

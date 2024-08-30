@@ -20,6 +20,8 @@ The board only has one of each gfx chip, the only additional chip not found
 on the 2/4p board is 053253. This chip is also on Run n Gun which is
 likewise a 2 screen game.
 
+Reverse-engineered schematics: https://github.com/jotego/jtbin/blob/master/sch/xmen.pdf
+
 ***************************************************************************/
 
 #include "emu.h"
@@ -161,8 +163,6 @@ private:
 };
 
 
-// video
-
 /***************************************************************************
 
   Callbacks for the K052109
@@ -301,7 +301,7 @@ void xmen6p_state::screen_vblank(int state)
 		index += m_tilemap_select ? 2 : 0;
 		for (int offset = 0; offset < (0xc000 / 2); offset++)
 		{
-			if (index == 0 || (offset != 0x1c80 && offset != 0x1e80))
+			if (index == 0 || (offset != 0x1c00 && offset != 0x1c80 && offset != 0x1e80))
 				m_k052109->write(offset, m_tilemap[index][offset] & 0x00ff);
 		}
 
@@ -337,8 +337,6 @@ void xmen6p_state::screen_vblank(int state)
 	}
 }
 
-
-// machine
 
 /***************************************************************************
 
@@ -512,7 +510,11 @@ static INPUT_PORTS_START( xmen )
 	KONAMI16_MSB_UDLR(4, IPT_BUTTON3, IPT_COIN4 )
 
 	PORT_START("EEPROM")
-	PORT_BIT( 0x003f, IP_ACTIVE_LOW, IPT_UNKNOWN )  // unused?
+	PORT_BIT( 0x0001, IP_ACTIVE_LOW, IPT_SERVICE1 )
+	PORT_BIT( 0x0002, IP_ACTIVE_LOW, IPT_SERVICE2 )
+	PORT_BIT( 0x0004, IP_ACTIVE_LOW, IPT_SERVICE3 )
+	PORT_BIT( 0x0008, IP_ACTIVE_LOW, IPT_SERVICE4 )
+	PORT_BIT( 0x0030, IP_ACTIVE_LOW, IPT_UNUSED )
 	PORT_BIT( 0x0040, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER("eeprom", eeprom_serial_er5911_device, do_read)
 	PORT_BIT( 0x0080, IP_ACTIVE_HIGH, IPT_CUSTOM ) PORT_READ_LINE_DEVICE_MEMBER("eeprom", eeprom_serial_er5911_device, ready_read)
 	PORT_BIT( 0x0100, IP_ACTIVE_LOW, IPT_START1 )
@@ -1220,26 +1222,26 @@ ROM_START( xmenabl )
 	ROM_LOAD16_BYTE( "rom1",  0x00000, 0x80000, CRC(c895fdc1) SHA1(e7e6908374310ef0e71d9541402a18818ea10134) )
 	ROM_LOAD16_BYTE( "rom2",  0x00001, 0x80000, CRC(50d56da7) SHA1(7ae0748f65d9de62be8c0cd1b41dceb1ea91ba3e) )
 
-	ROM_REGION( 0x200000, "k052109", 0 )    // tiles, k052109 non really present
+	ROM_REGION( 0x200000, "k052109", 0 )    // tiles, k052109 not really present
 	ROM_LOAD32_WORD( "gfx15l", 0x000000, 0x100000, CRC(6b649aca) SHA1(2595f314517738e8614facf578cc951a6c36a180) )
 	ROM_LOAD32_WORD( "gfx16l", 0x000002, 0x100000, CRC(c5dc8fc4) SHA1(9887cb002c8b72be7ce933cb397f00cdc5506c8c) )
 
-	ROM_REGION( 0x400000, "k053246", 0 )   // graphics (addressable by the main CPU), k053246 non really present
+	ROM_REGION( 0x400000, "k053246", 0 )   // graphics (addressable by the main CPU), k053246 not really present
 	ROM_LOAD64_WORD( "gfx2h",  0x000000, 0x100000, CRC(ea05d52f) SHA1(7f2c14f907355856fb94e3a67b73aa1919776835) ) // sprites
 	ROM_LOAD64_WORD( "gfx2l",  0x000002, 0x100000, CRC(96b91802) SHA1(641943557b59b91f0edd49ec8a73cef7d9268b32) )
 	ROM_LOAD64_WORD( "gfx1h",  0x000004, 0x100000, CRC(321ed07a) SHA1(5b00ed676daeea974bdce6701667cfe573099dad) )
 	ROM_LOAD64_WORD( "gfx1l",  0x000006, 0x100000, CRC(46da948e) SHA1(168ac9178ee5bad5931557fb549e1237971d7839) )
 
 	ROM_REGION( 0x100000, "oki", 0 )
-	ROM_LOAD( "oki1", 0x00000, 0x80000, CRC(ded562e0) SHA1(e67daae3e8e4a3a4979d3debf085f9c332404dd4) ) // xx1xxxxxxxxxxxxxxxx = 0xFF
+	ROM_LOAD( "oki1", 0x00000, 0x80000, CRC(2967436b) SHA1(44d4bf4c38e340169577098d958a09877067e119) )
 	ROM_LOAD( "oki2", 0x80000, 0x80000, CRC(74a12d1e) SHA1(b5e23e8efea2cf19385c081cfe8088bead132c21) )
 
 	ROM_REGION( 0x80, "eeprom", 0 )
 	ROM_LOAD( "xmen_aea.nv", 0x0000, 0x0080, CRC(d73d4f20) SHA1(b39906eb59ecf8f1e8141b467021e0a581186d47) )
 
 	ROM_REGION( 0x400, "plds", 0 )
-	ROM_LOAD( "gal16v8b", 0x000, 0x117, NO_DUMP ) // near the sprite hw and ROMs
-	ROM_LOAD( "gal16v8d", 0x200, 0x117, NO_DUMP ) // near the M6295
+	ROM_LOAD( "gal16v8b", 0x000, 0x117, CRC(af9802f9) SHA1(173466314d8672232fa6ed7ad7ec0a3b6aeae85a) ) // near the sprite hw and ROMs
+	ROM_LOAD( "gal16v8d", 0x200, 0x117, CRC(5f0f86a3) SHA1(bcc78bf37ed8f11f76759a50e7639bb9b063bc29) ) // near the M6295
 ROM_END
 
 } // anonymous namespace
@@ -1264,7 +1266,7 @@ GAME( 1992, xmenj,   xmen, xmen,    xmen,   xmen_state,   empty_init, ROT0, "Kon
 GAME( 1992, xmenja,  xmen, xmen,    xmen,   xmen_state,   empty_init, ROT0, "Konami",  "X-Men (4 Players ver JEA)",          MACHINE_SUPPORTS_SAVE )
 GAME( 1992, xmena,   xmen, xmen,    xmen,   xmen_state,   empty_init, ROT0, "Konami",  "X-Men (4 Players ver AEA)",          MACHINE_SUPPORTS_SAVE )
 GAME( 1992, xmenaa,  xmen, xmen,    xmen,   xmen_state,   empty_init, ROT0, "Konami",  "X-Men (4 Players ver ADA)",          MACHINE_SUPPORTS_SAVE )
-GAME( 1992, xmenabl, xmen, xmenabl, xmen,   xmen_state,   empty_init, ROT0, "bootleg", "X-Men (4 Players ver AEA, bootleg)", MACHINE_NOT_WORKING | MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE ) // sprites are wrong, one oki ROM may be bad or the banking not correct (or both)
+GAME( 1992, xmenabl, xmen, xmenabl, xmen,   xmen_state,   empty_init, ROT0, "bootleg", "X-Men (4 Players ver AEA, bootleg)", MACHINE_NOT_WORKING | MACHINE_IMPERFECT_GRAPHICS | MACHINE_IMPERFECT_SOUND | MACHINE_SUPPORTS_SAVE ) // sprites are wrong, Oki banking not correct (doubtful it can be this bad, even being a bootleg)
 
 GAME( 1992, xmen2pe, xmen, xmen,    xmen2p, xmen_state,   empty_init, ROT0, "Konami",  "X-Men (2 Players ver EAA)",          MACHINE_SUPPORTS_SAVE )
 GAME( 1992, xmen2pu, xmen, xmen,    xmen2p, xmen_state,   empty_init, ROT0, "Konami",  "X-Men (2 Players ver UAB)",          MACHINE_SUPPORTS_SAVE )

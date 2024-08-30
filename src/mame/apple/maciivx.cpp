@@ -19,12 +19,14 @@
 
 #include "emu.h"
 
+#include "dfac.h"
 #include "egret.h"
 #include "macadb.h"
 #include "macscsi.h"
 #include "mactoolbox.h"
 #include "vasp.h"
 
+#include "bus/nscsi/cd.h"
 #include "bus/nscsi/devices.h"
 #include "bus/nubus/nubus.h"
 #include "bus/nubus/cards.h"
@@ -41,6 +43,7 @@
 #include "emupal.h"
 #include "screen.h"
 #include "softlist_dev.h"
+#include "speaker.h"
 
 namespace {
 
@@ -57,6 +60,7 @@ public:
 		m_macadb(*this, "macadb"),
 		m_ram(*this, RAM_TAG),
 		m_vasp(*this, "vasp"),
+		m_dfac(*this, "dfac"),
 		m_fdc(*this, "fdc"),
 		m_floppy(*this, "fdc:%d", 0U),
 		m_scsibus1(*this, "scsi"),
@@ -81,6 +85,7 @@ private:
 	required_device<macadb_device> m_macadb;
 	required_device<ram_device> m_ram;
 	required_device<vasp_device> m_vasp;
+	required_device<dfac_device> m_dfac;
 	required_device<applefdintf_device> m_fdc;
 	required_device_array<floppy_connector, 2> m_floppy;
 	required_device<nscsi_bus_device> m_scsibus1;
@@ -294,8 +299,13 @@ void maciivx_state::maciiv_base(machine_config &config)
 	NSCSI_CONNECTOR(config, "scsi:0", mac_scsi_devices, nullptr);
 	NSCSI_CONNECTOR(config, "scsi:1", mac_scsi_devices, nullptr);
 	NSCSI_CONNECTOR(config, "scsi:2", mac_scsi_devices, nullptr);
-	NSCSI_CONNECTOR(config, "scsi:3", mac_scsi_devices, nullptr);
-	NSCSI_CONNECTOR(config, "scsi:4", mac_scsi_devices, "cdrom");
+	NSCSI_CONNECTOR(config, "scsi:3").option_set("cdrom", NSCSI_CDROM_APPLE).machine_config(
+		[](device_t *device)
+		{
+			device->subdevice<cdda_device>("cdda")->add_route(0, "^^lspeaker", 1.0);
+			device->subdevice<cdda_device>("cdda")->add_route(1, "^^rspeaker", 1.0);
+		});
+	NSCSI_CONNECTOR(config, "scsi:4", mac_scsi_devices, nullptr);
 	NSCSI_CONNECTOR(config, "scsi:5", mac_scsi_devices, nullptr);
 	NSCSI_CONNECTOR(config, "scsi:6", mac_scsi_devices, "harddisk");
 	NSCSI_CONNECTOR(config, "scsi:7").option_set("ncr5380", NCR53C80).machine_config([this](device_t *device)
@@ -313,6 +323,7 @@ void maciivx_state::maciiv_base(machine_config &config)
 	m_scsihelp->timeout_error_callback().set(FUNC(maciivx_state::scsi_berr_w));
 
 	SOFTWARE_LIST(config, "hdd_list").set_original("mac_hdd");
+	SOFTWARE_LIST(config, "cd_list").set_original("mac_cdrom").set_filter("MC68030,MC68030_32");
 	SOFTWARE_LIST(config, "flop35hd_list").set_original("mac_hdflop");
 
 	SCC85C30(config, m_scc, C7M);
@@ -331,10 +342,19 @@ void maciivx_state::maciiv_base(machine_config &config)
 	rs232b.dcd_handler().set(m_scc, FUNC(z80scc_device::dcdb_w));
 	rs232b.cts_handler().set(m_scc, FUNC(z80scc_device::ctsb_w));
 
+	SPEAKER(config, "lspeaker").front_left();
+	SPEAKER(config, "rspeaker").front_right();
+
+	APPLE_DFAC(config, m_dfac, 22257);
+	m_dfac->add_route(0, "lspeaker", 1.0);
+	m_dfac->add_route(1, "rspeaker", 1.0);
+
 	VASP(config, m_vasp, C15M);
 	m_vasp->set_maincpu_tag("maincpu");
 	m_vasp->set_rom_tag("bootrom");
 	m_vasp->hdsel_callback().set(FUNC(maciivx_state::hdsel_w));
+	m_vasp->add_route(0, m_dfac, 1.0);
+	m_vasp->add_route(1, m_dfac, 1.0);
 
 	MACADB(config, m_macadb, C15M);
 
@@ -364,8 +384,12 @@ void maciivx_state::maciivx(machine_config &config)
 
 	maciiv_base(config);
 
-	EGRET(config, m_egret, EGRET_341S0851);
+	EGRET(config, m_egret, XTAL(32'768));
+	m_egret->set_default_bios_tag("341s0851");
 	m_egret->reset_callback().set(FUNC(maciivx_state::egret_reset_w));
+	m_egret->dfac_scl_callback().set(m_dfac, FUNC(dfac_device::clock_write));
+	m_egret->dfac_sda_callback().set(m_dfac, FUNC(dfac_device::data_write));
+	m_egret->dfac_latch_callback().set(m_dfac, FUNC(dfac_device::latch_write));
 	m_egret->linechange_callback().set(m_macadb, FUNC(macadb_device::adb_linechange_w));
 	m_egret->via_clock_callback().set(m_vasp, FUNC(vasp_device::cb1_w));
 	m_egret->via_data_callback().set(m_vasp, FUNC(vasp_device::cb2_w));
@@ -399,5 +423,5 @@ ROM_END
 
 }   // anonymous namespace
 
-COMP(1993, maciivx, 0,       0, maciivx, maciivx, maciivx_state, empty_init, "Apple Computer", "Macintosh IIvx", MACHINE_SUPPORTS_SAVE | MACHINE_IMPERFECT_SOUND)
-COMP(1993, maciivi, maciivx, 0, maciivi, maciivx, maciivx_state, empty_init, "Apple Computer", "Macintosh IIvi", MACHINE_SUPPORTS_SAVE | MACHINE_IMPERFECT_SOUND)
+COMP(1993, maciivx, 0,       0, maciivx, maciivx, maciivx_state, empty_init, "Apple Computer", "Macintosh IIvx", MACHINE_SUPPORTS_SAVE)
+COMP(1993, maciivi, maciivx, 0, maciivi, maciivx, maciivx_state, empty_init, "Apple Computer", "Macintosh IIvi", MACHINE_SUPPORTS_SAVE)

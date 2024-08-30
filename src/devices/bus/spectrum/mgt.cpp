@@ -151,10 +151,11 @@
 
 **********************************************************************/
 
-
 #include "emu.h"
 #include "mgt.h"
 #include "softlist_dev.h"
+
+#include "formats/coupedsk.h"
 
 
 //**************************************************************************
@@ -403,7 +404,7 @@ void spectrum_disciple_device::device_reset()
 //  IMPLEMENTATION  spectrum_plusd_device
 //**************************************************************************
 
-int spectrum_plusd_device::romcs()
+bool spectrum_plusd_device::romcs()
 {
 	return m_romcs;
 }
@@ -539,9 +540,9 @@ void spectrum_plusd_device::busy_w(int state)
 //  IMPLEMENTATION  spectrum_disciple_device
 //**************************************************************************
 
-int spectrum_disciple_device::romcs()
+bool spectrum_disciple_device::romcs()
 {
-	return m_romcs | m_exp->romcs();
+	return m_romcs || m_exp->romcs();
 }
 
 void spectrum_disciple_device::pre_opcode_fetch(offs_t offset)

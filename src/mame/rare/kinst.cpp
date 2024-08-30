@@ -187,12 +187,13 @@ Notes:
 #include "dcs.h"
 
 #include "bus/ata/ataintf.h"
-#include "bus/ata/idehd.h"
+#include "bus/ata/hdd.h"
 #include "cpu/adsp2100/adsp2100.h"
 #include "cpu/mips/mips3.h"
 
 #include "emupal.h"
 #include "screen.h"
+#include "speaker.h"
 
 
 namespace {
@@ -704,7 +705,11 @@ void kinst_state::kinst(machine_config &config)
 	PALETTE(config, m_palette, palette_device::BGR_555);
 
 	// sound hardware
+	SPEAKER(config, "mono").front_center();
+
 	DCS_AUDIO_2K(config, m_dcs, 0);
+	m_dcs->set_maincpu_tag(m_maincpu);
+	m_dcs->add_route(0, "mono", 1.0);
 }
 
 

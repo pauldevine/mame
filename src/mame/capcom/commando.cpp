@@ -239,8 +239,6 @@ private:
 };
 
 
-// video
-
 template <uint8_t Which>
 void commando_state::videoram_w(offs_t offset, uint8_t data)
 {
@@ -350,8 +348,6 @@ uint32_t commando_state::screen_update(screen_device &screen, bitmap_ind16 &bitm
 	return 0;
 }
 
-
-// machine
 
 // Memory Maps
 
@@ -1031,13 +1027,13 @@ void commando_state::init_spaceinv()
 
 // Game Drivers
 
-GAME( 1985, commando,   0,        commando, commando, commando_state, init_commando, ROT270, "Capcom",                         "Commando (World)",              MACHINE_SUPPORTS_SAVE )
-GAME( 1985, commandou,  commando, commando, commandou,commando_state, init_commando, ROT270, "Capcom (Data East USA license)", "Commando (US set 1)",           MACHINE_SUPPORTS_SAVE )
-GAME( 1985, commandou2, commando, commando, commando, commando_state, init_commando, ROT270, "Capcom (Data East USA license)", "Commando (US set 2)",           MACHINE_SUPPORTS_SAVE )
-GAME( 1985, commandoj,  commando, commando, commando, commando_state, init_commando, ROT270, "Capcom",                         "Senjou no Ookami",              MACHINE_SUPPORTS_SAVE )
-GAME( 1985, commandob,  commando, commando, commando, commando_state, init_spaceinv, ROT270, "bootleg",                        "Commando (bootleg set 1)",      MACHINE_SUPPORTS_SAVE )
-GAME( 1985, commandob2, commando, commando, commando, commando_state, init_commando, ROT270, "bootleg",                        "Commando (bootleg set 2)",      MACHINE_SUPPORTS_SAVE )
-GAME( 1985, commandob3, commando, commando, commando, commando_state, init_commando, ROT270, "bootleg",                        "Commando (bootleg set 3)",      MACHINE_SUPPORTS_SAVE )
-GAME( 1985, sinvasn,    commando, commando, commando, commando_state, init_commando, ROT270, "Capcom",                         "Space Invasion (Europe)",       MACHINE_SUPPORTS_SAVE )
-GAME( 1985, sinvasnb,   commando, commando, commando, commando_state, init_spaceinv, ROT270, "bootleg",                        "Space Invasion (bootleg)",      MACHINE_SUPPORTS_SAVE )
-GAME( 1985, mercenario, commando, commando, commando, commando_state, init_spaceinv, ROT270, "bootleg",                        "Mercenario (Commando bootleg)", MACHINE_SUPPORTS_SAVE )
+GAME( 1985, commando,   0,        commando, commando, commando_state, init_commando, ROT270, "Capcom",                         "Commando (World)",                 MACHINE_SUPPORTS_SAVE )
+GAME( 1985, commandou,  commando, commando, commandou,commando_state, init_commando, ROT270, "Capcom (Data East USA license)", "Commando (US set 1)",              MACHINE_SUPPORTS_SAVE )
+GAME( 1985, commandou2, commando, commando, commando, commando_state, init_commando, ROT270, "Capcom (Data East USA license)", "Commando (US set 2)",              MACHINE_SUPPORTS_SAVE )
+GAME( 1985, commandoj,  commando, commando, commando, commando_state, init_commando, ROT270, "Capcom",                         "Senjou no Ookami",                 MACHINE_SUPPORTS_SAVE )
+GAME( 1985, commandob,  commando, commando, commando, commando_state, init_spaceinv, ROT270, "bootleg",                        "Commando (bootleg set 1)",         MACHINE_SUPPORTS_SAVE )
+GAME( 1985, commandob2, commando, commando, commando, commando_state, init_commando, ROT270, "bootleg",                        "Commando (bootleg set 2)",         MACHINE_SUPPORTS_SAVE )
+GAME( 1985, commandob3, commando, commando, commando, commando_state, init_commando, ROT270, "bootleg",                        "Commando (bootleg set 3)",         MACHINE_SUPPORTS_SAVE )
+GAME( 1985, sinvasn,    commando, commando, commando, commando_state, init_commando, ROT270, "Capcom",                         "Space Invasion (Europe)",          MACHINE_SUPPORTS_SAVE )
+GAME( 1985, sinvasnb,   commando, commando, commando, commando_state, init_spaceinv, ROT270, "bootleg",                        "Space Invasion (bootleg)",         MACHINE_SUPPORTS_SAVE )
+GAME( 1985, mercenario, commando, commando, commando, commando_state, init_spaceinv, ROT270, "bootleg",                        "Mercenario (bootleg of Commando)", MACHINE_SUPPORTS_SAVE )

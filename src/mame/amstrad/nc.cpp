@@ -44,14 +44,13 @@
 
 #include "bus/centronics/ctronics.h"
 #include "bus/rs232/rs232.h"
+#include "bus/pccard/sram.h"
 #include "cpu/z80/z80.h"
 #include "imagedev/floppy.h"
 #include "machine/clock.h"
 #include "machine/i8251.h"
 #include "machine/mc146818.h"
 #include "machine/nvram.h"
-#include "machine/pccard.h"
-#include "machine/pccard_sram.h"
 #include "machine/ram.h"
 #include "machine/rp5c01.h"
 #include "machine/timer.h"
@@ -61,8 +60,6 @@
 #include "emupal.h"
 #include "screen.h"
 #include "speaker.h"
-
-#include "formats/pc_dsk.h"
 
 #define LOG_DEBUG   (1U << 1)
 #define LOG_IRQ     (1U << 2)
@@ -100,13 +97,17 @@ public:
 		m_mem_view2(*this, "block2"),
 		m_mem_view3(*this, "block3"),
 		m_keyboard(*this, "line%d", 0U),
-		m_battery(*this, "battery")
+		m_battery(*this, "battery"),
+		m_pcmcia_card_detect(1),
+		m_pcmcia_write_protect(1),
+		m_pcmcia_battery_voltage_1(1),
+		m_pcmcia_battery_voltage_2(1)
 	{
 	}
 
 	int pcmcia_card_detect_r() { return m_pcmcia_card_detect; }
 	int pcmcia_write_protect_r() { return m_pcmcia_write_protect; }
-	int pcmcia_battery_voltage_r() { return m_pcmcia_battery_voltage_1 | m_pcmcia_battery_voltage_2; }
+	int pcmcia_battery_voltage_r() { return m_pcmcia_battery_voltage_1 && m_pcmcia_battery_voltage_2; }
 
 	void nc_base(machine_config &config);
 
@@ -328,7 +329,8 @@ void nc200_state::io_map(address_map &map)
 	map(0xa0, 0xa0).portr("battery");
 	map(0xb0, 0xb9).r(FUNC(nc200_state::keyboard_r));
 	map(0xc0, 0xc1).rw(m_uart, FUNC(i8251_device::read), FUNC(i8251_device::write));
-	map(0xd0, 0xd1).rw(m_rtc, FUNC(mc146818_device::read), FUNC(mc146818_device::write));
+	map(0xd0, 0xd0).w(m_rtc, FUNC(mc146818_device::address_w));
+	map(0xd1, 0xd1).rw(m_rtc, FUNC(mc146818_device::data_r), FUNC(mc146818_device::data_w));
 	map(0xe0, 0xe1).m(m_fdc, FUNC(upd765a_device::map));
 }
 
@@ -450,10 +452,10 @@ static INPUT_PORTS_START( nc100 )
 	PORT_CONFNAME(0x08, 0x00, "Main Battery")
 	PORT_CONFSETTING(   0x00, "Good")
 	PORT_CONFSETTING(   0x08, "Bad")
-	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_CUSTOM) PORT_READ_LINE_MEMBER(nc100_state, pcmcia_battery_voltage_r)
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_CUSTOM) PORT_READ_LINE_MEMBER(nc100_state, pcmcia_battery_voltage_r)
 	PORT_BIT(0x20, 0x00, IPT_UNKNOWN) // input voltage?
-	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_CUSTOM) PORT_READ_LINE_MEMBER(nc100_state, pcmcia_write_protect_r)
-	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_CUSTOM) PORT_READ_LINE_MEMBER(nc100_state, pcmcia_card_detect_r)
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_CUSTOM) PORT_READ_LINE_MEMBER(nc100_state, pcmcia_write_protect_r)
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_CUSTOM) PORT_READ_LINE_MEMBER(nc100_state, pcmcia_card_detect_r)
 INPUT_PORTS_END
 
 static INPUT_PORTS_START( nc100de )
@@ -745,12 +747,12 @@ static INPUT_PORTS_START( nc200 )
 	PORT_CONFSETTING(   0x00, "Good")
 	PORT_CONFSETTING(   0x04, "Bad")
 	PORT_BIT(0x08, 0x00, IPT_UNKNOWN)
-	PORT_BIT(0x10, IP_ACTIVE_LOW, IPT_CUSTOM) PORT_READ_LINE_MEMBER(nc200_state, pcmcia_battery_voltage_r)
+	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_CUSTOM) PORT_READ_LINE_MEMBER(nc200_state, pcmcia_battery_voltage_r)
 	PORT_CONFNAME(0x20, 0x00, "Lithium Battery")
 	PORT_CONFSETTING(   0x00, "Good")
 	PORT_CONFSETTING(   0x20, "Bad")
-	PORT_BIT(0x40, IP_ACTIVE_LOW, IPT_CUSTOM) PORT_READ_LINE_MEMBER(nc200_state, pcmcia_write_protect_r)
-	PORT_BIT(0x80, IP_ACTIVE_LOW, IPT_CUSTOM) PORT_READ_LINE_MEMBER(nc200_state, pcmcia_card_detect_r)
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_CUSTOM) PORT_READ_LINE_MEMBER(nc200_state, pcmcia_write_protect_r)
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_CUSTOM) PORT_READ_LINE_MEMBER(nc200_state, pcmcia_card_detect_r)
 INPUT_PORTS_END
 
 
@@ -1345,10 +1347,10 @@ void nc_state::nc_base(machine_config &config)
 	rs232.dsr_handler().set(m_uart, FUNC(i8251_device::write_dsr));
 
 	PCCARD_SLOT(config, m_pcmcia, pcmcia_devices, nullptr);
-	m_pcmcia->card_detect_cb().set(FUNC(nc_state::pcmcia_card_detect_w));
-	m_pcmcia->write_protect_cb().set(FUNC(nc_state::pcmcia_write_protect_w));
-	m_pcmcia->battery_voltage_1_cb().set(FUNC(nc_state::pcmcia_battery_voltage_1_w));
-	m_pcmcia->battery_voltage_2_cb().set(FUNC(nc_state::pcmcia_battery_voltage_2_w));
+	m_pcmcia->cd1().set(FUNC(nc_state::pcmcia_card_detect_w));
+	m_pcmcia->wp().set(FUNC(nc_state::pcmcia_write_protect_w));
+	m_pcmcia->bvd1().set(FUNC(nc_state::pcmcia_battery_voltage_1_w));
+	m_pcmcia->bvd2().set(FUNC(nc_state::pcmcia_battery_voltage_2_w));
 }
 
 void nc100_state::nc100(machine_config &config)

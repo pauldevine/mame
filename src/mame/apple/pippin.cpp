@@ -181,7 +181,6 @@ void pippin_state::pippin(machine_config &config)
 
 	grandcentral_device &grandcentral(GRAND_CENTRAL(config, "pci:0d.0", 0));
 	grandcentral.set_maincpu_tag("maincpu");
-	grandcentral.set_pci_root_tag(":pci:00.0", AS_DATA);
 	grandcentral.irq_callback().set(FUNC(pippin_state::irq_w));
 
 	awacs_macrisc_device &awacs(AWACS_MACRISC(config, "codec", 45.1584_MHz_XTAL / 2));
@@ -197,7 +196,8 @@ void pippin_state::pippin(machine_config &config)
 
 	MACADB(config, m_macadb, 15.6672_MHz_XTAL);
 
-	CUDA(config, m_cuda, CUDA_341S0060);
+	CUDA_V2XX(config, m_cuda, XTAL(32'768));
+	m_cuda->set_default_bios_tag("341s0060");
 	m_cuda->reset_callback().set(FUNC(pippin_state::cuda_reset_w));
 	m_cuda->linechange_callback().set(m_macadb, FUNC(macadb_device::adb_linechange_w));
 	m_cuda->via_clock_callback().set(grandcentral, FUNC(heathrow_device::cb1_w));

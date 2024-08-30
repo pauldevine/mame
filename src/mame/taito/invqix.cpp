@@ -132,8 +132,8 @@ namespace {
 class invqix_state : public driver_device
 {
 public:
-	invqix_state(const machine_config &mconfig, device_type type, const char *tag)
-		: driver_device(mconfig, type, tag),
+	invqix_state(const machine_config &mconfig, device_type type, const char *tag) :
+		driver_device(mconfig, type, tag),
 		m_maincpu(*this, "maincpu"),
 		m_eeprom(*this, "eeprom"),
 		m_vram(*this, "vram")
@@ -141,17 +141,20 @@ public:
 
 	void invqix(machine_config &config);
 
+protected:
+	virtual void video_start() override;
+
 private:
 	uint32_t screen_update(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
 
-	uint16_t port3_r();
-	void port3_w(uint16_t data);
-	uint16_t port5_r();
-	void port5_w(uint16_t data);
-	uint16_t port6_r();
-	void port6_w(uint16_t data);
-	uint16_t porta_r();
-	uint16_t portg_r();
+	uint8_t port3_r();
+	void port3_w(uint8_t data);
+	uint8_t port5_r();
+	void port5_w(uint8_t data);
+	uint8_t port6_r();
+	void port6_w(uint8_t data);
+	uint8_t porta_r();
+	uint8_t portg_r();
 
 	void vctl_w(uint16_t data);
 
@@ -161,9 +164,6 @@ private:
 	required_device<h8s2394_device> m_maincpu;
 	required_device<eeprom_serial_93cxx_device> m_eeprom;
 	required_shared_ptr<uint16_t> m_vram;
-
-	// driver_device overrides
-	virtual void video_start() override;
 
 	uint16_t m_vctl = 0;      // 0000 for normal, 0001 for flip, 0100 when going to change (blank?)
 };
@@ -228,42 +228,42 @@ uint32_t invqix_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap
 	return 0;
 }
 
-uint16_t invqix_state::port3_r()
+uint8_t invqix_state::port3_r()
 {
 	return (m_eeprom->do_read() << 5) | 0x03;
 }
 
-void invqix_state::port3_w(uint16_t data)
+void invqix_state::port3_w(uint8_t data)
 {
 	m_eeprom->cs_write((data >> 2) & 1);
 	m_eeprom->di_write((data >> 4) & 1);
 	m_eeprom->clk_write((data >> 3) & 1);
 }
 
-uint16_t invqix_state::port5_r()
+uint8_t invqix_state::port5_r()
 {
 	return 0;
 }
 
-void invqix_state::port5_w(uint16_t data)
+void invqix_state::port5_w(uint8_t data)
 {
 }
 
-uint16_t invqix_state::port6_r()
+uint8_t invqix_state::port6_r()
 {
 	return 0;
 }
 
-void invqix_state::port6_w(uint16_t data)
+void invqix_state::port6_w(uint8_t data)
 {
 }
 
-uint16_t invqix_state::porta_r()
+uint8_t invqix_state::porta_r()
 {
 	return 0xf0;
 }
 
-uint16_t invqix_state::portg_r()
+uint8_t invqix_state::portg_r()
 {
 	return 0;
 }
@@ -287,13 +287,13 @@ void invqix_state::invqix_prg_map(address_map &map)
 static INPUT_PORTS_START( invqix )
 	PORT_START("SYSTEM")
 	PORT_SERVICE_NO_TOGGLE( 0x01, IP_ACTIVE_LOW )
-	PORT_BIT( 0x02, IP_ACTIVE_LOW,  IPT_COIN1 ) // coin 1
-	PORT_BIT( 0x04, IP_ACTIVE_LOW,  IPT_START1 ) PORT_NAME("Left 1 player start")   // start A-1 ("left start" - picks Space Invaders)
-	PORT_BIT( 0x08, IP_ACTIVE_LOW,  IPT_SERVICE1 ) // service
-	PORT_BIT( 0x10, IP_ACTIVE_LOW,  IPT_COIN2 )   // coin 2
-	PORT_BIT( 0x20, IP_ACTIVE_LOW,  IPT_START3 ) PORT_NAME("Left 2 players start")   // start A-2
-	PORT_BIT( 0x40, IP_ACTIVE_LOW,  IPT_UNUSED )
-	PORT_BIT( 0x80, IP_ACTIVE_LOW,  IPT_UNUSED )
+	PORT_BIT( 0x02, IP_ACTIVE_LOW, IPT_COIN1 ) // coin 1
+	PORT_BIT( 0x04, IP_ACTIVE_LOW, IPT_START1 ) PORT_NAME("Left 1 player start")   // start A-1 ("left start" - picks Space Invaders)
+	PORT_BIT( 0x08, IP_ACTIVE_LOW, IPT_SERVICE1 ) // service
+	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_COIN2 )   // coin 2
+	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_START3 ) PORT_NAME("Left 2 players start")   // start A-2
+	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_UNUSED )
+	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_UNUSED )
 
 	PORT_START("P1")
 	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_JOYSTICK_UP ) PORT_8WAY PORT_PLAYER(2)
@@ -313,7 +313,7 @@ static INPUT_PORTS_START( invqix )
 	PORT_BIT( 0x10, IP_ACTIVE_LOW, IPT_BUTTON1 ) PORT_PLAYER(1)
 	PORT_BIT( 0x20, IP_ACTIVE_LOW, IPT_BUTTON2 ) PORT_PLAYER(1)
 	PORT_BIT( 0x40, IP_ACTIVE_LOW, IPT_START2 ) PORT_NAME("Right 1 player start")   // start B-1 ("Right start" - picks Qix)
-	PORT_BIT( 0x80, IP_ACTIVE_LOW,  IPT_UNUSED )
+	PORT_BIT( 0x80, IP_ACTIVE_LOW, IPT_UNUSED )
 INPUT_PORTS_END
 
 void invqix_state::invqix(machine_config &config)
@@ -341,7 +341,7 @@ void invqix_state::invqix(machine_config &config)
 	screen.set_refresh_hz(60);
 	screen.set_screen_update(FUNC(invqix_state::screen_update));
 	screen.set_size(640, 480);
-	screen.set_visarea(0, 256, 0, 240);
+	screen.set_visarea(0, 256-1, 0, 240-1);
 
 	PALETTE(config, "palette").set_entries(65536);
 

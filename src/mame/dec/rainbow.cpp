@@ -330,7 +330,6 @@ W17 pulls J1 serial  port pin 1 to GND when set (chassis to logical GND).
 
 #include "machine/wd_fdc.h"
 #include "formats/rx50_dsk.h"
-#include "formats/pc_dsk.h" // PC Formats
 #include "imagedev/floppy.h"
 
 #include "imagedev/harddriv.h"
@@ -345,7 +344,7 @@ W17 pulls J1 serial  port pin 1 to GND when set (chassis to logical GND).
 #include "bus/rs232/terminal.h"
 
 #include "machine/i8251.h"
-#include "dec_lk201.h"
+#include "lk201.h"
 #include "machine/nvram.h"
 #include "machine/ripple_counter.h"
 #include "machine/timer.h"
@@ -1267,7 +1266,7 @@ void rainbow_base_state::machine_reset()
 	m_leds[5] = 1;
 	m_leds[6] = 1;
 
-	// GREEN KEYBOARD LEDs (see machine/dec_lk201.cpp)
+	// GREEN KEYBOARD LEDs (see dec/lk201.cpp)
 }
 
 void rainbow_modela_state::machine_reset()
@@ -3302,7 +3301,6 @@ void rainbow_base_state::rainbow_base(machine_config &config)
 
 	m_comm_port->option_add("microsoft_mouse", MSFT_HLE_SERIAL_MOUSE);
 	m_comm_port->option_add("logitech_mouse", LOGITECH_HLE_SERIAL_MOUSE);
-	m_comm_port->option_add("msystems_mouse", MSYSTEMS_HLE_SERIAL_MOUSE);
 	m_comm_port->set_default_option("logitech_mouse");
 
 	printer.set_default_option("printer");

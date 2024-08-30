@@ -25,7 +25,7 @@ and GROM clocked by 3.12MHz/8=390kHz.
 #include "speaker.h"
 
 // internal artwork
-#include "milton.lh" // clickable
+#include "milton.lh"
 
 class milton_filter_device;
 
@@ -300,4 +300,4 @@ ROM_END
 *******************************************************************************/
 
 //    YEAR  NAME    PARENT  COMPAT  MACHINE  INPUT   CLASS         INIT        COMPANY, FULLNAME, FLAGS
-SYST( 1980, milton, 0,      0,      milton,  milton, milton_state, empty_init, "Milton Bradley", "Electronic Milton", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK )
+SYST( 1980, milton, 0,      0,      milton,  milton, milton_state, empty_init, "Milton Bradley", "Electronic Milton", MACHINE_SUPPORTS_SAVE )

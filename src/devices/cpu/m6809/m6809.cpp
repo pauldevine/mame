@@ -145,6 +145,7 @@ DEFINE_DEVICE_TYPE(M6809, m6809_device, "m6809", "MC6809 (legacy)")
 m6809_base_device::m6809_base_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock, const device_type type, int divider) :
 	cpu_device(mconfig, type, tag, owner, clock),
 	m_lic_func(*this),
+	m_syncack_write_func(*this),
 	m_program_config("program", ENDIANNESS_BIG, 8, 16),
 	m_sprogram_config("decrypted_opcodes", ENDIANNESS_BIG, 8, 16),
 	m_clock_divider(divider)
@@ -186,15 +187,28 @@ void m6809_base_device::device_start()
 	// initialize variables
 	m_cc = 0;
 	m_pc.w = 0;
+	m_ppc.w = 0;
 	m_s.w = 0;
 	m_u.w = 0;
 	m_q.q = 0;
 	m_x.w = 0;
 	m_y.w = 0;
 	m_dp = 0;
-	m_reg = 0;
+	m_temp.w = 0;
+	m_opcode = 0;
+
 	m_reg8 = nullptr;
 	m_reg16 = nullptr;
+	m_reg = 0;
+	m_nmi_line = false;
+	m_nmi_asserted = false;
+	m_firq_line = false;
+	m_irq_line = false;
+	m_lds_encountered = false;
+
+	m_state = 0;
+	m_cond = false;
+	m_free_run = false;
 
 	// setup regtable
 	save_item(NAME(m_pc.w));
@@ -208,6 +222,7 @@ void m6809_base_device::device_start()
 	save_item(NAME(m_cc));
 	save_item(NAME(m_temp.w));
 	save_item(NAME(m_opcode));
+
 	save_item(NAME(m_nmi_asserted));
 	save_item(NAME(m_nmi_line));
 	save_item(NAME(m_firq_line));

@@ -27,7 +27,7 @@ TODO:
 - the VFD scrolls around 30% too slow compared to the real one, probably depends
   on how many T1 clock edges the 8041 can detect (see mcu_t1_r)
 
-********************************************************************************
+================================================================================
 
 Voice Bridge Challenger (Model VBRC, later reissued as Model 7002/BV2)
 and Bridge Challenger 3 (Model 7014)
@@ -41,7 +41,7 @@ added.
 RE notes by Kevin Horton
 
 This unit is similar in construction kinda to the chess challengers, however it
-has an 8041 which does ALL of the system I/O.  The Z80 has NO IO AT ALL other than
+has an 8041 which does ALL of the system I/O. The Z80 has NO IO AT ALL other than
 what is performed through the 8041!
 
 The main CPU is a Z80 running at 2.5MHz
@@ -61,10 +61,10 @@ Memory Map:
 8000-DFFF: unused
 E000-FFFF: write to TSI chip
 
-NOTE: when the TSI chip is written to, the CPU IS STOPPED.  The CPU will run again
-when the word is done being spoken.  This is because D0-D5 run to the TSI chip directly.
+NOTE: when the TSI chip is written to, the CPU IS STOPPED. The CPU will run again
+when the word is done being spoken. This is because D0-D5 run to the TSI chip directly.
 
-The TSI chip's ROM is 4K, and is marked 101-32118.  The clock is the same as the Chess
+The TSI chip's ROM is 4K, and is marked 101-32118. The clock is the same as the Chess
 Challengers- 470K/100pf which gives a frequency around 25KHz or so.
 
 Port Map:
@@ -115,12 +115,12 @@ P6.1 - segment B
 P6.2 - segment F
 P6.3 - segment G
 
-P7.0 - LED enable (high = LEDs can be lit.  low = LEDs will not light)
+P7.0 - LED enable (high = LEDs can be lit. low = LEDs will not light)
 P7.1 - goes through inverter, to pads that are not used
 P7.2 - segment C
 P7.3 - segment H
 
-button matrix:
+Button matrix:
 --------------
 the matrix is composed of 8 columns by 4 rows.
 
@@ -155,7 +155,7 @@ E*  *  *  *  *C
        D
 
 The digits of the display are numbered left to right, 0 through 7 and are controlled
-by the grids.  hi = grid on, hi = segment on.
+by the grids. hi = grid on, hi = segment on.
 
 A detailed description of the hardware can be found also in the patent 4,373,719.
 
@@ -171,6 +171,7 @@ Two card decks exist (red and blue), each has the same set of barcodes.
 *******************************************************************************/
 
 #include "emu.h"
+
 #include "cpu/z80/z80.h"
 #include "cpu/mcs48/mcs48.h"
 #include "machine/i8243.h"
@@ -178,12 +179,13 @@ Two card decks exist (red and blue), each has the same set of barcodes.
 #include "sound/dac.h"
 #include "sound/s14001a.h"
 #include "video/pwm.h"
+
 #include "speaker.h"
 
 // internal artwork
-#include "fidel_brc.lh" // clickable
-#include "fidel_bv3.lh" // clickable
-#include "fidel_gin.lh" // clickable
+#include "fidel_brc.lh"
+#include "fidel_bv3.lh"
+#include "fidel_gin.lh"
 
 
 namespace {
@@ -223,17 +225,18 @@ private:
 	required_device<i8243_device> m_i8243;
 	required_device<pwm_display_device> m_display;
 	optional_device<s14001a_device> m_speech;
-	optional_device<dac_bit_interface> m_dac;
+	optional_device<dac_1bit_device> m_dac;
 	required_ioport_array<8> m_inputs;
+
+	u32 m_barcode = 0;
+	u16 m_vfd_data = 0;
+	u8 m_inp_mux = 0;
 
 	// address maps
 	void main_map(address_map &map);
 	void main_io(address_map &map);
 
 	TIMER_DEVICE_CALLBACK_MEMBER(barcode_shift) { m_barcode >>= 1; }
-	u32 m_barcode = 0;
-	u16 m_vfd_data = 0;
-	u8 m_inp_mux = 0;
 
 	// I/O handlers
 	void update_display();
@@ -655,7 +658,17 @@ ROM_START( bridgec ) // model BRC, PCB label 510-4020-1C
 ROM_END
 
 
-ROM_START( vbrc ) // model VBRC aka 7002/BV2
+ROM_START( bridgeca ) // model UBC, PCB label 510-4020-1C
+	ROM_REGION( 0x10000, "maincpu", 0 )
+	ROM_LOAD("101-64108", 0x0000, 0x2000, CRC(08472223) SHA1(859865b13c908dbb474333263dc60f6a32461141) ) // NEC 2364C 210
+	ROM_LOAD("101-64109", 0x2000, 0x2000, CRC(320afa0f) SHA1(90edfe0ac19b108d232cda376b03a3a24befad4c) ) // NEC 2364C 211
+	ROM_LOAD("101-64110", 0x4000, 0x2000, CRC(3040d0bd) SHA1(caa55fc8d9196e408fb41e7171a68e5099519813) ) // NEC 2364C 212
+
+	ROM_REGION( 0x0400, "mcu", 0 )
+	ROM_LOAD("100-1009", 0x0000, 0x0400, CRC(60eb343f) SHA1(8a63e95ebd62e123bdecc330c0484a47c354bd1a) ) // NEC D8041C 563
+ROM_END
+
+ROM_START( bridgecv ) // model VBRC aka 7002/BV2
 	ROM_REGION( 0x10000, "maincpu", 0 )
 	ROM_LOAD("101-64108", 0x0000, 0x2000, CRC(08472223) SHA1(859865b13c908dbb474333263dc60f6a32461141) ) // NEC 2364C 210
 	ROM_LOAD("101-64109", 0x2000, 0x2000, CRC(320afa0f) SHA1(90edfe0ac19b108d232cda376b03a3a24befad4c) ) // NEC 2364C 211
@@ -666,16 +679,6 @@ ROM_START( vbrc ) // model VBRC aka 7002/BV2
 
 	ROM_REGION( 0x1000, "speech", 0 )
 	ROM_LOAD("101-32118", 0x0000, 0x1000, CRC(a0b8bb8f) SHA1(f56852108928d5c6caccfc8166fa347d6760a740) )
-ROM_END
-
-ROM_START( bridgeca ) // model UBC, PCB label 510-4020-1C
-	ROM_REGION( 0x10000, "maincpu", 0 )
-	ROM_LOAD("101-64108", 0x0000, 0x2000, CRC(08472223) SHA1(859865b13c908dbb474333263dc60f6a32461141) ) // NEC 2364C 210
-	ROM_LOAD("101-64109", 0x2000, 0x2000, CRC(320afa0f) SHA1(90edfe0ac19b108d232cda376b03a3a24befad4c) ) // NEC 2364C 211
-	ROM_LOAD("101-64110", 0x4000, 0x2000, CRC(3040d0bd) SHA1(caa55fc8d9196e408fb41e7171a68e5099519813) ) // NEC 2364C 212
-
-	ROM_REGION( 0x0400, "mcu", 0 )
-	ROM_LOAD("100-1009", 0x0000, 0x0400, CRC(60eb343f) SHA1(8a63e95ebd62e123bdecc330c0484a47c354bd1a) ) // NEC D8041C 563
 ROM_END
 
 
@@ -711,12 +714,12 @@ ROM_END
     Drivers
 *******************************************************************************/
 
-//    YEAR  NAME      PARENT  COMPAT  MACHINE  INPUT  CLASS       INIT        COMPANY, FULLNAME, FLAGS
-SYST( 1979, bridgec,  0,      0,      brc,     brc,   card_state, empty_init, "Fidelity Electronics", "Bridge Challenger", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK | MACHINE_IMPERFECT_CONTROLS )
+//    YEAR  NAME      PARENT    COMPAT  MACHINE  INPUT  CLASS       INIT        COMPANY, FULLNAME, FLAGS
+SYST( 1979, bridgec,  0,        0,      brc,     brc,   card_state, empty_init, "Fidelity Electronics", "Bridge Challenger", MACHINE_SUPPORTS_SAVE | MACHINE_IMPERFECT_CONTROLS )
 
-SYST( 1979, vbrc,     0,      0,      vbrc,    brc,   card_state, empty_init, "Fidelity Electronics", "Voice Bridge Challenger", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK | MACHINE_IMPERFECT_CONTROLS )
-SYST( 1979, bridgeca, vbrc,   0,      brc,     brc,   card_state, empty_init, "Fidelity Electronics", "Advanced Bridge Challenger", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK | MACHINE_IMPERFECT_CONTROLS )
+SYST( 1979, bridgeca, 0,        0,      brc,     brc,   card_state, empty_init, "Fidelity Electronics", "Advanced Bridge Challenger", MACHINE_SUPPORTS_SAVE | MACHINE_IMPERFECT_CONTROLS )
+SYST( 1979, bridgecv, bridgeca, 0,      vbrc,    brc,   card_state, empty_init, "Fidelity Electronics", "Voice Bridge Challenger", MACHINE_SUPPORTS_SAVE | MACHINE_IMPERFECT_CONTROLS )
 
-SYST( 1982, bridgec3, 0,      0,      bv3,     bv3,   card_state, empty_init, "Fidelity Electronics", "Bridge Challenger III", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK | MACHINE_IMPERFECT_CONTROLS )
+SYST( 1982, bridgec3, 0,        0,      bv3,     bv3,   card_state, empty_init, "Fidelity Electronics", "Bridge Challenger III", MACHINE_SUPPORTS_SAVE | MACHINE_IMPERFECT_CONTROLS )
 
-SYST( 1982, gincribc, 0,      0,      gin,     gin,   card_state, empty_init, "Fidelity Electronics", "Gin & Cribbage Challenger", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK | MACHINE_IMPERFECT_CONTROLS )
+SYST( 1982, gincribc, 0,        0,      gin,     gin,   card_state, empty_init, "Fidelity Electronics", "Gin & Cribbage Challenger", MACHINE_SUPPORTS_SAVE | MACHINE_IMPERFECT_CONTROLS )

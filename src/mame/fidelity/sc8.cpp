@@ -15,10 +15,10 @@ It was also rereleased in 1983 as "Poppy", marketed for children, the housing
 was in bright red color.
 
 Hardware notes:
+- PCB label: 510-1011 REV.2
 - Z80A CPU @ 3.9MHz
 - 4KB ROM(MOS 2732), 256 bytes RAM(35391CP)
 - chessboard buttons, 8*8+1 leds
-- PCB label 510-1011 REV.2
 
 *******************************************************************************/
 
@@ -32,7 +32,7 @@ Hardware notes:
 #include "speaker.h"
 
 // internal artwork
-#include "fidel_sc8.lh" // clickable
+#include "fidel_sc8.lh"
 
 
 namespace {
@@ -60,8 +60,11 @@ private:
 	required_device<cpu_device> m_maincpu;
 	required_device<sensorboard_device> m_board;
 	required_device<pwm_display_device> m_display;
-	required_device<dac_bit_interface> m_dac;
+	required_device<dac_1bit_device> m_dac;
 	required_ioport m_inputs;
+
+	u8 m_inp_mux = 0;
+	u8 m_led_data = 0;
 
 	// address maps
 	void main_map(address_map &map);
@@ -70,9 +73,6 @@ private:
 	// I/O handlers
 	u8 input_r();
 	void control_w(offs_t offset, u8 data);
-
-	u8 m_inp_mux = 0;
-	u8 m_led_data = 0;
 };
 
 void scc_state::machine_start()
@@ -150,8 +150,8 @@ static INPUT_PORTS_START( scc )
 	PORT_BIT(0x08, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_CODE(KEYCODE_4) PORT_CODE(KEYCODE_4_PAD) PORT_NAME("Bishop")
 	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_CODE(KEYCODE_5) PORT_CODE(KEYCODE_5_PAD) PORT_NAME("Queen")
 	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_CODE(KEYCODE_6) PORT_CODE(KEYCODE_6_PAD) PORT_NAME("King")
-	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_CODE(KEYCODE_DEL) PORT_NAME("CL")
-	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_CODE(KEYCODE_R) PORT_NAME("RE")
+	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_CODE(KEYCODE_DEL) PORT_CODE(KEYCODE_BACKSPACE) PORT_NAME("CL")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_CODE(KEYCODE_R) PORT_CODE(KEYCODE_N) PORT_NAME("RE")
 INPUT_PORTS_END
 
 
@@ -200,4 +200,4 @@ ROM_END
 *******************************************************************************/
 
 //    YEAR  NAME   PARENT  COMPAT  MACHINE  INPUT  CLASS      INIT        COMPANY, FULLNAME, FLAGS
-SYST( 1980, fscc8, 0,      0,      scc,     scc,   scc_state, empty_init, "Fidelity Electronics", "Sensory Chess Challenger \"8\"", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK )
+SYST( 1980, fscc8, 0,      0,      scc,     scc,   scc_state, empty_init, "Fidelity Electronics", "Sensory Chess Challenger \"8\"", MACHINE_SUPPORTS_SAVE )

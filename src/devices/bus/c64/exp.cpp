@@ -9,6 +9,10 @@
 #include "emu.h"
 #include "exp.h"
 
+#include "formats/cbm_crt.h"
+
+#include <tuple>
+
 
 
 //**************************************************************************
@@ -95,6 +99,8 @@ void c64_expansion_slot_device::device_reset()
 
 std::pair<std::error_condition, std::string> c64_expansion_slot_device::call_load()
 {
+	std::error_condition err;
+
 	if (m_card)
 	{
 		m_card->m_roml_size = 0;
@@ -106,11 +112,16 @@ std::pair<std::error_condition, std::string> c64_expansion_slot_device::call_loa
 
 		if (!loaded_through_softlist())
 		{
+			util::core_file &file = image_core_file();
 			size = length();
 
 			if (is_filetype("80"))
 			{
-				fread(m_card->m_roml, size);
+				std::size_t actual;
+				std::tie(err, m_card->m_roml, actual) = read(file, size);
+				if (!err && (actual != size))
+					err = std::errc::io_error;
+
 				m_card->m_roml_size = size;
 				m_card->m_exrom = 0;
 
@@ -121,7 +132,11 @@ std::pair<std::error_condition, std::string> c64_expansion_slot_device::call_loa
 			}
 			else if (is_filetype("a0"))
 			{
-				fread(m_card->m_romh, 0x2000);
+				std::size_t actual;
+				std::tie(err, m_card->m_roml, actual) = read(file, 0x2000);
+				if (!err && (actual != 0x2000))
+					err = std::errc::io_error;
+
 				m_card->m_romh_size = 0x2000;
 
 				m_card->m_exrom = 0;
@@ -129,14 +144,18 @@ std::pair<std::error_condition, std::string> c64_expansion_slot_device::call_loa
 			}
 			else if (is_filetype("e0"))
 			{
-				fread(m_card->m_romh, 0x2000);
+				std::size_t actual;
+				std::tie(err, m_card->m_roml, actual) = read(file, 0x2000);
+				if (!err && (actual != 0x2000))
+					err = std::errc::io_error;
+
 				m_card->m_romh_size = 0x2000;
 
 				m_card->m_game = 0;
 			}
 			else if (is_filetype("crt"))
 			{
-				if (cbm_crt_read_header(image_core_file(), &m_card->m_roml_size, &m_card->m_romh_size, &m_card->m_exrom, &m_card->m_game))
+				if (cbm_crt_read_header(file, &m_card->m_roml_size, &m_card->m_romh_size, &m_card->m_exrom, &m_card->m_game))
 				{
 					uint8_t *roml = nullptr;
 					uint8_t *romh = nullptr;
@@ -147,8 +166,12 @@ std::pair<std::error_condition, std::string> c64_expansion_slot_device::call_loa
 					if (m_card->m_roml_size) roml = m_card->m_roml.get();
 					if (m_card->m_romh_size) romh = m_card->m_romh.get();
 
-					cbm_crt_read_data(image_core_file(), roml, romh);
+					cbm_crt_read_data(file, roml, romh);
 				}
+			}
+			else
+			{
+				err = image_error::INVALIDIMAGE;
 			}
 		}
 		else
@@ -185,7 +208,7 @@ std::pair<std::error_condition, std::string> c64_expansion_slot_device::call_loa
 			return std::make_pair(image_error::INVALIDLENGTH, "ROM size must be power of 2");
 	}
 
-	return std::make_pair(std::error_condition(), std::string());
+	return std::make_pair(err, std::string());
 }
 
 
@@ -349,6 +372,7 @@ void c64_expansion_slot_device::set_passthrough()
 #include "sw8k.h"
 #include "swiftlink.h"
 #include "system3.h"
+#include "tibdd001.h"
 #include "tdos.h"
 #include "turbo232.h"
 #include "vizastar.h"
@@ -381,6 +405,7 @@ void c64_expansion_cards(device_slot_interface &device)
 	device.option_add("speakez", C64_SPEAKEASY);
 	device.option_add("supercpu", C64_SUPERCPU);
 	device.option_add("swiftlink", C64_SWIFTLINK);
+	device.option_add("tibdd001", C64_TIB_DD_001);
 	device.option_add("turbo232", C64_TURBO232);
 	device.option_add("buscard", C64_BUSCARD);
 	device.option_add("buscard2", C64_BUSCARD2);

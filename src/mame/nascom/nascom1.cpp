@@ -44,6 +44,8 @@ Cassette (nascom2):
 #include "softlist_dev.h"
 #include "screen.h"
 
+#include <tuple>
+
 
 namespace {
 
@@ -319,12 +321,19 @@ TIMER_DEVICE_CALLBACK_MEMBER( nascom2_state::nascom2_kansas_r )
 template<int Dest>
 SNAPSHOT_LOAD_MEMBER(nascom_state::snapshot_cb)
 {
-	uint8_t line[29];
+	util::random_read &file = image.image_core_file();
+	std::error_condition err;
 
-	while (image.fread(&line, sizeof(line)) == sizeof(line))
+	while (true)
 	{
-		unsigned int addr, b[8], dummy;
+		size_t actual;
 
+		uint8_t line[29];
+		std::tie(err, actual) = read(file, &line, sizeof(line));
+		if (err || (sizeof(line) != actual))
+			break;
+
+		unsigned int addr, b[8];
 		if (sscanf((char *)line, "%4x %x %x %x %x %x %x %x %x",
 			&addr, &b[0], &b[1], &b[2], &b[3], &b[4], &b[5], &b[6], &b[7]) == 9)
 		{
@@ -345,14 +354,17 @@ SNAPSHOT_LOAD_MEMBER(nascom_state::snapshot_cb)
 		{
 			return std::make_pair(image_error::INVALIDIMAGE, "Unsupported file format");
 		}
-		dummy = 0x00;
-		while (!image.image_feof() && dummy != 0x0a && dummy != 0x1f)
+		int dummy = 0x00;
+		do
 		{
-			image.fread(&dummy, 1);
+			std::tie(err, actual) = read(file, &dummy, 1);
+			if (err || (actual != 1))
+				return std::make_pair(err, std::string());
 		}
+		while (dummy != 0x0a && dummy != 0x1f);
 	}
 
-	return std::make_pair(std::error_condition(), std::string());
+	return std::make_pair(err, std::string());
 }
 
 
@@ -372,7 +384,10 @@ std::pair<std::error_condition, std::string> nascom2_state::load_cart(
 			return std::make_pair(image_error::INVALIDLENGTH, "Unsupported image file size (must be no more than 4K)");
 
 		slot->rom_alloc(slot->length(), GENERIC_ROM8_WIDTH, ENDIANNESS_LITTLE);
-		slot->fread(slot->get_rom_base(), slot->length());
+
+		auto const [err, actual] = read(slot->image_core_file(), slot->get_rom_base(), slot->length());
+		if (err || actual != slot->length())
+			return std::make_pair(err ? err : std::errc::io_error, std::string());
 
 		// we just assume that socket1 should be loaded to 0xc000 and socket2 to 0xd000
 		switch (slot_id)

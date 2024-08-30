@@ -20,12 +20,12 @@
 ****************************************************************************/
 
 #include "emu.h"
+#include "bus/pci/opti82c861.h"
 #include "cpu/powerpc/ppc.h"
 #include "machine/dimm_spd.h"
 #include "machine/i2cmem.h"
 #include "machine/input_merger.h"
 #include "machine/mpc106.h"
-#include "machine/opti82c861.h"
 #include "machine/pci.h"
 #include "machine/pci-ide.h"
 #include "machine/ram.h"
@@ -160,7 +160,6 @@ void imac_state::imac(machine_config &config)
 
 	paddington_device &paddington(PADDINGTON(config, "pci:10.0", 0));
 	paddington.set_maincpu_tag("maincpu");
-	paddington.set_pci_root_tag(":pci:00.0", AS_DATA);
 	paddington.irq_callback().set(FUNC(imac_state::irq_w));
 
 	atirage_device &ati(ATI_RAGEIIC(config, "pci:12.0", 14.318181_MHz_XTAL));
@@ -174,7 +173,8 @@ void imac_state::imac(machine_config &config)
 
 	MACADB(config, m_macadb, 15.6672_MHz_XTAL);
 
-	CUDA(config, m_cuda, CUDA_341S0060);
+	CUDA_V2XX(config, m_cuda, XTAL(32'768));
+	m_cuda->set_default_bios_tag("341s0060");
 	m_cuda->reset_callback().set(FUNC(imac_state::cuda_reset_w));
 	m_cuda->linechange_callback().set(m_macadb, FUNC(macadb_device::adb_linechange_w));
 	m_cuda->via_clock_callback().set(paddington, FUNC(heathrow_device::cb1_w));

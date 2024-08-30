@@ -45,7 +45,7 @@
 
 #include "cpu/m68000/m68000.h"
 #include "cpu/scudsp/scudsp.h"
-#include "cpu/sh/sh2.h"
+#include "cpu/sh/sh7604.h"
 #include "machine/smpc.h"
 #include "machine/stvcd.h"
 #include "sound/scsp.h"
@@ -1113,12 +1113,12 @@ void stv_state::pdr2_output_w(uint8_t data)
 void stv_state::stv(machine_config &config)
 {
 	/* basic machine hardware */
-	SH2(config, m_maincpu, MASTER_CLOCK_352/2); // 28.6364 MHz
+	SH7604(config, m_maincpu, MASTER_CLOCK_352/2); // 28.6364 MHz
 	m_maincpu->set_addrmap(AS_PROGRAM, &stv_state::stv_mem);
 	m_maincpu->set_is_slave(0);
 	TIMER(config, "scantimer").configure_scanline(FUNC(stv_state::saturn_scanline), "screen", 0, 1);
 
-	SH2(config, m_slave, MASTER_CLOCK_352/2); // 28.6364 MHz
+	SH7604(config, m_slave, MASTER_CLOCK_352/2); // 28.6364 MHz
 	m_slave->set_addrmap(AS_PROGRAM, &stv_state::stv_mem);
 	m_slave->set_is_slave(1);
 	TIMER(config, "slave_scantimer").configure_scanline(FUNC(stv_state::saturn_slave_scanline), "screen", 0, 1);
@@ -1250,7 +1250,10 @@ void stv_state::batmanfr_sound_comms_w(offs_t offset, uint32_t data, uint32_t me
 void stv_state::batmanfr(machine_config &config)
 {
 	stv(config);
-	ACCLAIM_RAX(config, "rax", 0);
+	ACCLAIM_RAX(config, m_rax, 0);
+	// TODO: RAX output connected to SCSP?
+	m_rax->add_route(0, "lspeaker", 1.0);
+	m_rax->add_route(1, "rspeaker", 1.0);
 }
 
 void stv_state::shienryu(machine_config &config)
@@ -1861,6 +1864,29 @@ static INPUT_PORTS_START( micrombc )
 	PORT_BIT( 0x0000, IP_ACTIVE_LOW, IPT_UNUSED )
 INPUT_PORTS_END
 
+static INPUT_PORTS_START( wasafari )
+	PORT_INCLUDE( stv )
+
+	PORT_MODIFY("PORTA")
+	PORT_BIT( 0xfc, IP_ACTIVE_LOW, IPT_UNUSED )
+
+	PORT_MODIFY("PORTB")
+	PORT_BIT( 0xff, IP_ACTIVE_LOW, IPT_UNUSED )
+
+	PORT_MODIFY("PORTC")
+	PORT_BIT( 0x30, IP_ACTIVE_LOW, IPT_UNUSED )
+
+	PORT_MODIFY("PORTE")
+	PORT_BIT( 0xff, IP_ACTIVE_LOW, IPT_UNUSED )
+
+	PORT_MODIFY("PORTF")
+	PORT_BIT( 0xff, IP_ACTIVE_LOW, IPT_UNUSED )
+
+	PORT_MODIFY("PORTG")
+	PORT_BIT( 0x01, IP_ACTIVE_LOW, IPT_BUTTON3 ) PORT_NAME("Winch")
+INPUT_PORTS_END
+
+
 #define ROM_LOAD16_WORD_SWAP_BIOS(bios,name,offset,length,hash) \
 		ROMX_LOAD(name, offset, length, hash, ROM_GROUPWORD | ROM_REVERSE | ROM_BIOS(bios))
 
@@ -1899,32 +1925,34 @@ ROM_LOAD16_WORD_SWAP_BIOS( x, "saturn.bin", 0x000000, 0x080000, CRC(653ff2d8) SH
 
 #define STV_BIOS \
 	ROM_REGION32_BE( 0x080000, "bios", 0 ) /* SH2 code */ \
-	ROM_SYSTEM_BIOS( 0,  "jp",    "EPR-20091 (Japan 97/08/21)" ) \
-	ROM_LOAD16_WORD_SWAP_BIOS( 0,  "epr-20091.ic8",   0x000000, 0x080000, CRC(59ed40f4) SHA1(eff0f54c70bce05ff3a289bf30b1027e1c8cd117) ) \
-	ROM_SYSTEM_BIOS( 1,  "jp1",   "EPR-19730 (Japan 97/02/17)" ) \
-	ROM_LOAD16_WORD_SWAP_BIOS( 1,  "epr-19730.ic8",   0x000000, 0x080000, CRC(d0e0889d) SHA1(fae53107c894e0c41c49e191dbe706c9cd6e50bd) ) \
-	ROM_SYSTEM_BIOS( 2,  "jp2",   "EPR-17951A (Japan 95/04/25)" ) \
-	ROM_LOAD16_WORD_SWAP_BIOS( 2,  "epr-17951a.ic8",  0x000000, 0x080000, CRC(2672f9d8) SHA1(63cf4a6432f6c87952f9cf3ab0f977aed2367303) ) \
-	ROM_SYSTEM_BIOS( 3,  "jp3",   "EPR-17740A (Japan 95/02/20)" ) \
-	ROM_LOAD16_WORD_SWAP_BIOS( 3,  "epr-17740a.ic8",  0x000000, 0x080000, CRC(3e23c81f) SHA1(f9b282fd27693e9891843597b2e1823da3d23c7b) ) \
-	ROM_SYSTEM_BIOS( 4,  "jp4",   "EPR-17740 (Japan 95/01/31)" ) \
-	ROM_LOAD16_WORD_SWAP_BIOS( 4,  "epr-17740.ic8",   0x000000, 0x080000, CRC(5c5aa63d) SHA1(06860d96923b81afbc21e0ad32ee19487d8ff6e7) ) \
-	ROM_SYSTEM_BIOS( 5,  "euro",  "EPR-17954A (Europe 95/04/25)" ) \
-	ROM_LOAD16_WORD_SWAP_BIOS( 5,  "epr-17954a.ic8",  0x000000, 0x080000, CRC(f7722da3) SHA1(af79cff317e5b57d49e463af16a9f616ed1eee08) ) \
-	ROM_SYSTEM_BIOS( 6,  "us",    "EPR-17952A (USA 95/04/25)" ) \
-	ROM_LOAD16_WORD_SWAP_BIOS( 6,  "epr-17952a.ic8",  0x000000, 0x080000, CRC(d1be2adf) SHA1(eaf1c3e5d602e1139d2090a78d7e19f04f916794) ) \
-	ROM_SYSTEM_BIOS( 7,  "us1",   "EPR-17741a (USA 95/02/20)" ) \
-	ROM_LOAD16_WORD_SWAP_BIOS( 7,  "epr-17741a.ic8",  0x000000, 0x080000, CRC(4166c663) SHA1(cc41d30de06160083d77e0dc5d69e61fec7fdcb5) ) \
-	ROM_SYSTEM_BIOS( 8,  "tw",    "EPR-19854 (Taiwan 97/05/15)" ) \
-	ROM_LOAD16_WORD_SWAP_BIOS( 8,  "epr-19854.ic8",   0x000000, 0x080000, CRC(e09d1f60) SHA1(b55cdcb45b2a5b0b35e352cf7625f0bd659084df) ) \
-	ROM_SYSTEM_BIOS( 9,  "tw1",   "EPR-17953A (Taiwan 95/04/25)" ) \
-	ROM_LOAD16_WORD_SWAP_BIOS( 9,  "epr-17953a.ic8",  0x000000, 0x080000, CRC(a4c47570) SHA1(9efc73717ec8a13417e65c54344ded9fc25bf5ef) ) \
-	ROM_SYSTEM_BIOS( 10, "tw2",   "EPR-17742A (Taiwan 95/02/20)" ) \
-	ROM_LOAD16_WORD_SWAP_BIOS( 10, "epr-17742a.ic8",  0x000000, 0x080000, CRC(02daf123) SHA1(23185beb1ce9c09b8719e57d1adb7b28c8141fd5) ) \
-	ROM_SYSTEM_BIOS( 11,  "debug","Development (1.10, 95/01/13)" ) \
-	ROM_LOAD16_WORD_SWAP_BIOS( 11,  "stv110.bin",     0x000000, 0x080000, CRC(3dfeda92) SHA1(8eb33192a57df5f3a1dfb57263054867c6b2db6d) ) \
-	ROM_SYSTEM_BIOS( 12, "dev",   "Development (1.061, 94/11/25)" ) \
-	ROM_LOAD16_WORD_SWAP_BIOS( 12, "stv1061.bin",     0x000000, 0x080000, CRC(728dbca3) SHA1(0ed2030177f0aa8285645c395ae9ad9f568ab1d6) ) \
+	ROM_SYSTEM_BIOS( 0,  "jp",    "EPR-23603 (Japan 00/10/24)" ) \
+	ROM_LOAD16_WORD_SWAP_BIOS( 0,  "epr-23603.ic8",   0x000000, 0x080000, CRC(f688ae60) SHA1(1a31b6b1a4257fcb6ac6a91e67dd798f91505f48) ) \
+	ROM_SYSTEM_BIOS( 1,  "jp1",   "EPR-20091 (Japan 97/08/21)" ) \
+	ROM_LOAD16_WORD_SWAP_BIOS( 1,  "epr-20091.ic8",   0x000000, 0x080000, CRC(59ed40f4) SHA1(eff0f54c70bce05ff3a289bf30b1027e1c8cd117) ) \
+	ROM_SYSTEM_BIOS( 2,  "jp2",   "EPR-19730 (Japan 97/02/17)" ) \
+	ROM_LOAD16_WORD_SWAP_BIOS( 2,  "epr-19730.ic8",   0x000000, 0x080000, CRC(d0e0889d) SHA1(fae53107c894e0c41c49e191dbe706c9cd6e50bd) ) \
+	ROM_SYSTEM_BIOS( 3,  "jp3",   "EPR-17951A (Japan 95/04/25)" ) \
+	ROM_LOAD16_WORD_SWAP_BIOS( 3,  "epr-17951a.ic8",  0x000000, 0x080000, CRC(2672f9d8) SHA1(63cf4a6432f6c87952f9cf3ab0f977aed2367303) ) \
+	ROM_SYSTEM_BIOS( 4,  "jp4",   "EPR-17740A (Japan 95/02/20)" ) \
+	ROM_LOAD16_WORD_SWAP_BIOS( 4,  "epr-17740a.ic8",  0x000000, 0x080000, CRC(3e23c81f) SHA1(f9b282fd27693e9891843597b2e1823da3d23c7b) ) \
+	ROM_SYSTEM_BIOS( 5,  "jp5",   "EPR-17740 (Japan 95/01/31)" ) \
+	ROM_LOAD16_WORD_SWAP_BIOS( 5,  "epr-17740.ic8",   0x000000, 0x080000, CRC(5c5aa63d) SHA1(06860d96923b81afbc21e0ad32ee19487d8ff6e7) ) \
+	ROM_SYSTEM_BIOS( 6,  "euro",  "EPR-17954A (Europe 95/04/25)" ) \
+	ROM_LOAD16_WORD_SWAP_BIOS( 6,  "epr-17954a.ic8",  0x000000, 0x080000, CRC(f7722da3) SHA1(af79cff317e5b57d49e463af16a9f616ed1eee08) ) \
+	ROM_SYSTEM_BIOS( 7,  "us",    "EPR-17952A (USA 95/04/25)" ) \
+	ROM_LOAD16_WORD_SWAP_BIOS( 7,  "epr-17952a.ic8",  0x000000, 0x080000, CRC(d1be2adf) SHA1(eaf1c3e5d602e1139d2090a78d7e19f04f916794) ) \
+	ROM_SYSTEM_BIOS( 8,  "us1",   "EPR-17741a (USA 95/02/20)" ) \
+	ROM_LOAD16_WORD_SWAP_BIOS( 8,  "epr-17741a.ic8",  0x000000, 0x080000, CRC(4166c663) SHA1(cc41d30de06160083d77e0dc5d69e61fec7fdcb5) ) \
+	ROM_SYSTEM_BIOS( 9,  "tw",    "EPR-19854 (Taiwan 97/05/15)" ) \
+	ROM_LOAD16_WORD_SWAP_BIOS( 9,  "epr-19854.ic8",   0x000000, 0x080000, CRC(e09d1f60) SHA1(b55cdcb45b2a5b0b35e352cf7625f0bd659084df) ) \
+	ROM_SYSTEM_BIOS( 10,  "tw1",  "EPR-17953A (Taiwan 95/04/25)" ) \
+	ROM_LOAD16_WORD_SWAP_BIOS( 10, "epr-17953a.ic8",  0x000000, 0x080000, CRC(a4c47570) SHA1(9efc73717ec8a13417e65c54344ded9fc25bf5ef) ) \
+	ROM_SYSTEM_BIOS( 11, "tw2",   "EPR-17742A (Taiwan 95/02/20)" ) \
+	ROM_LOAD16_WORD_SWAP_BIOS( 11, "epr-17742a.ic8",  0x000000, 0x080000, CRC(02daf123) SHA1(23185beb1ce9c09b8719e57d1adb7b28c8141fd5) ) \
+	ROM_SYSTEM_BIOS( 12,  "debug","Development (1.10, 95/01/13)" ) \
+	ROM_LOAD16_WORD_SWAP_BIOS( 12,  "stv110.bin",     0x000000, 0x080000, CRC(3dfeda92) SHA1(8eb33192a57df5f3a1dfb57263054867c6b2db6d) ) \
+	ROM_SYSTEM_BIOS( 13, "dev",   "Development (1.061, 94/11/25)" ) \
+	ROM_LOAD16_WORD_SWAP_BIOS( 13, "stv1061.bin",     0x000000, 0x080000, CRC(728dbca3) SHA1(0ed2030177f0aa8285645c395ae9ad9f568ab1d6) ) \
 	\
 	ROM_REGION32_BE( 0x3000000, "abus", ROMREGION_ERASE00 ) /* SH2 code */
 
@@ -2948,20 +2976,23 @@ Sports Fishing
 
 There's the regular STV main board with dumped BIOS EPR-18343 and on top is a plug in board (837-11781) containing 2 smaller plug in modules.
 One is the CD ROM controller (838-10834) with....
-Hitachi HD6437097 (SH1 variant) (QFP144)
-20MHz Xtal
-Hitachi YGR019B (QFP168)
-HM514260 4M DRAM
+-Hitachi HD6437097 (SH1 variant) (QFP144)
+-20MHz Xtal
+-Hitachi YGR019B (QFP168)
+-HM514260 4M DRAM
 
 The other is an MPEG decoder board (837-10835 171-6814D PC BD MPEG) containing....
-HM514260 4M DRAM
-Hitachi HD814102F (QFP100)
-Sega 315-5745 HD814101FE (QFP144)
-a curious PLCC44 marked SEGA MPR-17610A-H. The MPR-xxxxx suggests it's a PLCC mask ROM, but type unknown????)
+-HM514260 4M DRAM
+-Hitachi HD814102F (QFP100)
+-Sega 315-5745 HD814101FE (QFP144)
+-A curious PLCC44 marked SEGA MPR-17610A-H. The MPR-xxxxx suggests it's a PLCC mask ROM, but type unknown????)
+
+The CD-ROM unit is an Hitachi CDD-150SG with a custom flat connector (like the Saturn
+unit, but you cannot use a Saturn unit on the STV, as it lacks tray control).
 */
 
 ROM_START( sfish2 )
-//  STV_BIOS // - sports fishing 2 uses its own bios
+//  STV_BIOS // - Sports Fishing 2 uses its own BIOS
 
 	ROM_REGION32_BE( 0x080000, "bios", 0 ) /* SH2 code */
 	ROM_LOAD16_WORD_SWAP( "epr18343.bin",   0x000000, 0x080000, CRC(48e2eecf) SHA1(a38bfbd5f279525e413b18b5ed3f37f6e9e31cdc) ) /* sport fishing 2 bios */
@@ -3065,6 +3096,26 @@ ROM_START( nclubv3 )
 
 	ROM_REGION16_BE( 0x80, "eeprom", 0 ) // preconfigured to 1 player
 	ROM_LOAD( "nclubv3.nv", 0x0000, 0x0080, CRC(9122a9e9) SHA1(5318994905e005567709c41449547c545182bece) )
+ROM_END
+
+ROM_START( nclubv4 ) // 837-12765-11 sticker
+	STV_BIOS
+
+	ROM_REGION32_BE( 0x3000000, "cart", ROMREGION_ERASE00 ) /* SH2 code */
+
+	ROM_LOAD16_WORD_SWAP( "ic22", 0x0200000, 0x0200000, CRC(80eba7e9) SHA1(d9f90a1aa508451bdd52fddda5ac65adc15f4764) ) // OK
+	ROM_LOAD16_WORD_SWAP( "ic24", 0x0400000, 0x0200000, CRC(6bbb1b0c) SHA1(ec4b0d49a3704804818d370458913e6ac443ea3e) ) // OK
+	ROM_LOAD16_WORD_SWAP( "ic26", 0x0600000, 0x0200000, CRC(5352ade3) SHA1(a5e060e98bfa7334152602e3568c89ff588926b8) ) // OK
+	ROM_LOAD16_WORD_SWAP( "ic28", 0x0800000, 0x0200000, CRC(44f4b15a) SHA1(e9e9e6dad4354e5bbad18efdc8ea0843a087cd59) ) // OK
+	ROM_LOAD16_WORD_SWAP( "ic30", 0x0a00000, 0x0200000, CRC(fc4e56e6) SHA1(63ff37eafcf854f33bd20c3c12950834fa10807f) ) // OK
+	ROM_LOAD16_WORD_SWAP( "ic32", 0x0c00000, 0x0200000, CRC(6f825b87) SHA1(7a69cc54d4ef42edddeb9fc0a199d0abc93e54df) ) // OK
+	ROM_LOAD16_WORD_SWAP( "ic34", 0x0e00000, 0x0200000, CRC(62114a08) SHA1(b44205b217fd982946b8446c7456afd97618a344) ) // OK
+	ROM_LOAD16_WORD_SWAP( "ic36", 0x1000000, 0x0200000, CRC(9a4109e5) SHA1(ba59caac5f5a80fc52c507d8a47f322a380aa9a1) ) // FIXED BITS (11111111), but present
+	ROM_LOAD16_WORD_SWAP( "ic23", 0x1200000, 0x0200000, CRC(9a4109e5) SHA1(ba59caac5f5a80fc52c507d8a47f322a380aa9a1) ) // FIXED BITS (11111111), but present
+	ROM_LOAD16_WORD_SWAP( "ic25", 0x1400000, 0x0200000, CRC(9a4109e5) SHA1(ba59caac5f5a80fc52c507d8a47f322a380aa9a1) ) // FIXED BITS (11111111), but present
+
+	ROM_REGION16_BE( 0x80, "eeprom", 0 ) // preconfigured to 1 player
+	ROM_LOAD( "nclubv4.nv", 0x0000, 0x0080, CRC(7efc9c6a) SHA1(3d44940b7497b07151908a0a6bc2809c7e15f4a8) )
 ROM_END
 
 ROM_START( nclubdis ) // 837-12765-11 sticker
@@ -3312,7 +3363,7 @@ ROM_START( pclub27s ) // set to 1p
 	ROM_LOAD( "pclub27s.nv", 0x0000, 0x0080, CRC(e58c7167) SHA1(d88b1648c5d86a90615a8c6a1bf87bc9e75dc320) )
 ROM_END
 
-ROM_START( prc28su ) // set to 1p
+ROM_START( prc28su ) // set to 1p. 837-12765-02 ROM BD (stickered)
 	STV_BIOS
 
 	ROM_REGION32_BE( 0x3000000, "cart", ROMREGION_ERASE00 ) /* SH2 code */
@@ -3328,6 +3379,10 @@ ROM_START( prc28su ) // set to 1p
 
 	ROM_REGION16_BE( 0x80, "eeprom", 0 ) // preconfigured to 1 player
 	ROM_LOAD( "eeprom", 0x0000, 0x0080, CRC(447bb3bd) SHA1(9fefec09849bfa0c14b49e73ff13e2a538dff511) )
+
+	ROM_REGION( 0x400, "plds", ROMREGION_ERASE00 )
+	ROM_LOAD( "315-6055.ic12", 0x000, 0x117, NO_DUMP ) // PALCE16V8H-10JC on the front side of the cart
+	ROM_LOAD( "315-6056.ic13", 0x200, 0x117, NO_DUMP ) // PALCE16V8H-10JC on the back side of the cart
 ROM_END
 
 // this is the first one to offer visual display of the frames in the Frame Count test menu?
@@ -3399,6 +3454,25 @@ ROM_START( pclub2wb ) // set to 1p
 	ROM_LOAD( "pclub2wb.nv", 0x0000, 0x0080, CRC(0d442eec) SHA1(54dd544e1496e3999d8111eb06abf805b610d77d) )
 ROM_END
 
+
+ROM_START( pclubyo ) // 837-12765-01 ROM BD
+	STV_BIOS
+
+	ROM_REGION32_BE( 0x3000000, "cart", ROMREGION_ERASE00 ) /* SH2 code */
+
+	ROM_LOAD16_WORD_SWAP( "pclbyov1.ic22",    0x0200000, 0x0200000, CRC(769468d1) SHA1(6b7b4b18d275f8c2192ad68840397db29daf0874) )
+	ROM_LOAD16_WORD_SWAP( "pclbyov1.ic24",    0x0400000, 0x0200000, CRC(b25885bf) SHA1(290dae5478419bc02e0b0f2045542b745749ff4f) )
+	ROM_LOAD16_WORD_SWAP( "pclbyov1.ic26",    0x0600000, 0x0200000, CRC(cefc697f) SHA1(68acfea483f709d4390ab1f7a826f76dd11856a8) )
+	ROM_LOAD16_WORD_SWAP( "pclbyov1.ic28",    0x0800000, 0x0200000, CRC(3c330c9b) SHA1(92f8e8d4f43db7c4ce431d17501492a7f8d8a867) ) // same as some other sets
+	ROM_LOAD16_WORD_SWAP( "pclbyov1.ic30",    0x0a00000, 0x0200000, CRC(00a0c702) SHA1(f2c4a7a51559f0ade96b8e6337cd1a1d61472de7) ) // same as some other sets
+
+	ROM_REGION16_BE( 0x80, "eeprom", 0 ) // preconfigured to 1 player
+	ROM_LOAD( "pclubyo.nv", 0x0000, 0x0080, CRC(2021e0e5) SHA1(31e1107d31f02a259c123c42fe7f0202ad78d774) )
+
+	ROM_REGION( 0x400, "plds", ROMREGION_ERASE00 )
+	ROM_LOAD( "315-6055.ic12", 0x000, 0x117, NO_DUMP ) // PALCE16V8H-10JC on the front side of the cart
+	ROM_LOAD( "315-6056.ic13", 0x200, 0x117, NO_DUMP ) // PALCE16V8H-10JC on the back side of the cart
+ROM_END
 
 
 ROM_START( pclubyo2 ) // set to 1p
@@ -3686,14 +3760,9 @@ ROM_START( patocar )
 ROM_END
 
 ROM_START( sackids )
-//  STV_BIOS
+	STV_BIOS
 
-	// wants it's own specific bios, marked "CKBP1.13J0001024" at 0x800
-	// PC=06004150 is where it compares this
-	// it also looks like it has a specific I/O board for the lightpen
-	ROM_REGION32_BE( 0x080000, "bios", 0 ) /* SH2 code */
-	ROM_LOAD16_WORD_SWAP( "epr-20091.ic8",   0x000000, 0x080000, BAD_DUMP CRC(59ed40f4) SHA1(eff0f54c70bce05ff3a289bf30b1027e1c8cd117) )
-
+	// it looks like game has a specific I/O board for the lightpen
 	ROM_REGION32_BE( 0x3000000, "cart", ROMREGION_ERASE00 ) /* SH2 code */
 	ROM_LOAD16_WORD_SWAP( "ic22.bin",     0x0200000, 0x200000, CRC(4d9d1870) SHA1(c702964af2767b0db4ca1d6c7d07356e675d5efd) )
 	ROM_LOAD16_WORD_SWAP( "ic24.bin",     0x0400000, 0x200000, CRC(39fca3e5) SHA1(29be552f58b69f8f3f237ca14f13af3673559123) )
@@ -3703,8 +3772,20 @@ ROM_START( sackids )
 	ROM_LOAD16_WORD_SWAP( "ic32.bin",     0x0c00000, 0x200000, CRC(1db6c26b) SHA1(2e14b7b021bce145f989295fdc6effcd799f00a4) )
 	ROM_LOAD16_WORD_SWAP( "ic34.bin",     0x0e00000, 0x200000, CRC(0f3622c8) SHA1(69337114d6902675018371101f0fba01902de54a) )
 	ROM_LOAD16_WORD_SWAP( "ic36.bin",     0x1000000, 0x200000, CRC(9a4109e5) SHA1(ba59caac5f5a80fc52c507d8a47f322a380aa9a1) ) // empty / FF filled
+ROM_END
 
-	ROM_REGION32_BE( 0x3000000, "abus", ROMREGION_ERASE00 ) /* SH2 code */
+ROM_START( wasafari )
+	STV_BIOS
+
+	ROM_REGION32_BE( 0x3000000, "cart", ROMREGION_ERASE00 ) /* SH2 code */
+	ROM_LOAD16_WORD_SWAP( "ic22.bin",     0x0200000, 0x200000, CRC(d8bb2e2c) SHA1(e55714425f8dcf01e8cb68d67c96f19a9d6f4e3a) )
+	ROM_LOAD16_WORD_SWAP( "ic24.bin",     0x0400000, 0x200000, CRC(c1b0e173) SHA1(92e5fe1f9fa70182c5bf8f087686782714cf4416) )
+	ROM_LOAD16_WORD_SWAP( "ic26.bin",     0x0600000, 0x200000, CRC(a5c0577c) SHA1(b6e19001e67c8222af6802eae7b58be65d8ca9fd) )
+	ROM_LOAD16_WORD_SWAP( "ic28.bin",     0x0800000, 0x200000, CRC(2a8cfa97) SHA1(a38ab55e88413e0df3f32f23c2a9dcccca4483be) )
+	ROM_LOAD16_WORD_SWAP( "ic30.bin",     0x0a00000, 0x200000, CRC(9a4109e5) SHA1(ba59caac5f5a80fc52c507d8a47f322a380aa9a1) )
+
+	ROM_REGION16_BE( 0x80, "eeprom", 0 ) // preconfigured to 1 player
+	ROM_LOAD( "wasafari.nv", 0x0000, 0x0080, CRC(50861c5a) SHA1(c431703d7b56185f20af1aec04cabb5f49e2d4ba) )
 ROM_END
 
 ROM_START( dfeverg )
@@ -3865,7 +3946,7 @@ GAME( 1997, hanagumi,  stvbios, stv,      stv,      stv_state,   init_hanagumi, 
 GAME( 1996, introdon,  stvbios, stv,      stv,      stv_state,   init_stv,        ROT0,   "Sunsoft / Success",            "Karaoke Quiz Intro Don Don! (J 960213 V1.000)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS )
 GAME( 1995, kiwames,   stvbios, stvmp,    stvmp,    stv_state,   init_stv,        ROT0,   "Athena",                       "Pro Mahjong Kiwame S (J 951020 V1.208)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS )
 GAME( 1997, maruchan,  stvbios, stv,      stv,      stv_state,   init_maruchan,   ROT0,   "Sega / Toyosuisan",            "Maru-Chan de Goo! (J 971216 V1.000)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS )
-GAME( 1996, mausuke,   stvbios, stv,      stv,      stv_state,   init_mausuke,    ROT0,   "Data East",                    "Mausuke no Ojama the World (J 960314 V1.000)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS )
+GAME( 1996, mausuke,   stvbios, stv,      stv,      stv_state,   init_mausuke,    ROT0,   "Data East Corporation",        "Mausuke no Ojama the World (J 960314 V1.000)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS )
 GAME( 1999, micrombc,  stvbios, hopper,   micrombc, stv_state,   init_stv,        ROT0,   "Sega",                         "Microman Battle Charge (J 990326 V1.000)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS )
 GAME( 1998, myfairld,  stvbios, stvmp,    myfairld, stv_state,   init_stv,        ROT0,   "Micronet",                     "Virtual Mahjong 2 - My Fair Lady (J 980608 V1.000)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS )
 GAME( 1998, othellos,  stvbios, stv,      stv,      stv_state,   init_othellos,   ROT0,   "Success",                      "Othello Shiyouyo (J 980423 V1.002)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS )
@@ -3887,11 +3968,12 @@ GAME( 2000, skychal,   stvbios, hopper,   patocar,  stv_state,   init_stv,      
 GAME( 1995, smleague,  stvbios, stv,      stv,      stv_state,   init_smleague,   ROT0,   "Sega",                         "Super Major League (U 960108 V1.000)", MACHINE_NOT_WORKING | MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS )
 GAME( 1995, finlarch,  smleague,stv,      stv,      stv_state,   init_finlarch,   ROT0,   "Sega",                         "Final Arch (J 950714 V1.001)", MACHINE_NOT_WORKING | MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS )
 GAME( 1996, sokyugrt,  stvbios, stv,      stv,      stv_state,   init_sokyugrt,   ROT0,   "Raizing / Eighting",           "Soukyugurentai / Terra Diver (JUET 960821 V1.000)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS )
-GAME( 1995, suikoenb,  stvbios, stv,      stv6b,    stv_state,   init_suikoenb,   ROT0,   "Data East",                    "Suiko Enbu / Outlaws of the Lost Dynasty (JUETL 950314 V2.001)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS )
+GAME( 1995, suikoenb,  stvbios, stv,      stv6b,    stv_state,   init_suikoenb,   ROT0,   "Data East Corporation",        "Suiko Enbu / Outlaws of the Lost Dynasty (JUETL 950314 V2.001)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS )
 GAME( 1998, supgoal,   stvbios, hopper,   patocar,  stv_state,   init_stv,        ROT0,   "Sega",                         "Nerae! Super Goal (J 981218 V1.000)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS )
 GAME( 1997, techbowl,  stvbios, hopper,   patocar,  stv_state,   init_stv,        ROT0,   "Sega",                         "Technical Bowling (J 971212 V1.000)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS )
 GAME( 1996, vfkids,    stvbios, stv,      stv,      stv_state,   init_stv,        ROT0,   "Sega",                         "Virtua Fighter Kids (JUET 960319 V0.000)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS )
 GAME( 1997, vmahjong,  stvbios, stvmp,    vmahjong, stv_state,   init_stv,        ROT0,   "Micronet",                     "Virtual Mahjong (J 961214 V1.000)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS )
+GAME( 1998, wasafari,  stvbios, stv,      wasafari, stv_state,   init_stv,        ROT0,   "Sega",                         "Wanpaku Safari (J 981109 V1.000)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS )
 GAME( 1997, winterht,  stvbios, stv,      stv,      stv_state,   init_winterht,   ROT0,   "Sega",                         "Winter Heat (JUET 971012 V1.000)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS )
 GAME( 1997, znpwfv,    stvbios, stv,      stv,      stv_state,   init_znpwfv,     ROT0,   "Sega",                         "Zen Nippon Pro-Wrestling Featuring Virtua (J 971123 V1.000)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS )
 GAME( 1997, znpwfvt,   znpwfv,  stv,      stv,      stv_state,   init_znpwfv,     ROT0,   "Sega",                         "Zen Nippon Pro-Wrestling Featuring Virtua (T 971123 V1.000)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS )
@@ -3913,7 +3995,7 @@ GAME( 1997, pckobe99,  stvbios, stv,      stv,      stvpc_state, init_stv,      
 GAME( 1997, pclub26w,  stvbios, stv,      stv,      stvpc_state, init_stv,        ROT0,   "Atlus",                        "Print Club 2 Vol. 6 Winter (J 961210 V1.000)", MACHINE_NOT_WORKING ) // internal string is 'PURIKURA2 97FUYU' (but in reality it seems to be an end of 96 Winter version)
 GAME( 1997, pclub26wa, pclub26w,stv,      stv,      stvpc_state, init_stv,        ROT0,   "Atlus",                        "Print Club 2 Vol. 6 Winter (J 970121 V1.200)", MACHINE_NOT_WORKING ) // ^
 GAME( 1997, pclub27s,  stvbios, stv,      stv,      stvpc_state, init_stv,        ROT0,   "Atlus",                        "Print Club 2 Vol. 7 Spring (J 970313 V1.100)", MACHINE_NOT_WORKING )
-GAME( 1997, prc28su,   stvbios, stv,      stv,      stvpc_state, init_stv,        ROT0,   "Atlus",                        "Print Club 2 Vol. 8 Summer (J 970616 V1.100)", MACHINE_NOT_WORKING ) // internal string 97SUMMER
+GAME( 1997, prc28su,   stvbios, stv,      stv,      stvpc_state, init_stv,        ROT0,   "Atlus",                        "Print Club 2 Vol. 8 '97 Summer (J 970616 V1.100)", MACHINE_NOT_WORKING ) // internal string 97SUMMER
 GAME( 1997, prc29au,   stvbios, stv,      stv,      stvpc_state, init_stv,        ROT0,   "Atlus",                        "Print Club 2 Vol. 9 Autumn (J V1.100)", MACHINE_NOT_WORKING ) // internal string 97AUTUMN, no date code! (all 0)
 GAME( 1997, prc297wi,  stvbios, stv,      stv,      stvpc_state, init_stv,        ROT0,   "Atlus",                        "Print Club 2 '97 Winter Ver (J 971017 V1.100, set 1)", MACHINE_NOT_WORKING ) // internal string is '97WINTER'
 GAME( 1997, prc297wia, prc297wi,stv,      stv,      stvpc_state, init_stv,        ROT0,   "Atlus",                        "Print Club 2 '97 Winter Ver (J 971017 V1.100, set 2)", MACHINE_NOT_WORKING ) // different program revision, same date code, clearly didn't get updated properly
@@ -3925,6 +4007,7 @@ GAME( 2000, prc2ksu,   stvbios, stv,      stv,      stvpc_state, init_stv,      
 GAME( 1999, pclubor,   stvbios, stv,      stv,      stvpc_state, init_stv,        ROT0,   "Atlus",                        "Print Club Goukakenran (J 991104 V1.000)", MACHINE_NOT_WORKING )
 GAME( 1999, pclubol,   stvbios, stv,      stv,      stvpc_state, init_stv,        ROT0,   "Atlus",                        "Print Club Olive (J 980717 V1.000)", MACHINE_NOT_WORKING )
 GAME( 1997, pclub2kc,  stvbios, stv,      stv,      stvpc_state, init_stv,        ROT0,   "Atlus",                        "Print Club Kome Kome Club (J 970203 V1.000)", MACHINE_NOT_WORKING )
+GAME( 1997, pclubyo,   stvbios, stv,      stv,      stvpc_state, init_stv,        ROT0,   "Atlus",                        "Print Club Yoshimoto V1 (J 970208 V1.000)", MACHINE_NOT_WORKING ) // Yoshimoto V1 on cart, internal string YOSHIMOTO KOGYO
 GAME( 1997, pclubyo2,  stvbios, stv,      stv,      stvpc_state, init_stv,        ROT0,   "Atlus",                        "Print Club Yoshimoto V2 (J 970422 V1.100)", MACHINE_NOT_WORKING )
 
 GAME( 1997, pclove,    stvbios, stv_5838, stv,      stvpc_state, init_decathlt_nokey,   ROT0,   "Atlus",                        "Print Club LoveLove (J 970421 V1.000)", MACHINE_NOT_WORKING ) // uses the same type of protection as decathlete!!
@@ -3937,6 +4020,7 @@ GAME( 1998, stress,    stvbios, stv,      stv,      stvpc_state, init_stv,      
 GAME( 1996, nameclub,  stvbios, stv_5838, stv,      stvpc_state, init_decathlt_nokey,   ROT0,   "Sega",                         "Name Club (J 960315 V1.000)", MACHINE_NOT_WORKING ) // uses the same type of protection as decathlete!!
 GAME( 1996, nclubv2,   stvbios, stv_5838, stv,      stvpc_state, init_decathlt_nokey,   ROT0,   "Sega",                         "Name Club Ver.2 (J 960315 V1.000)", MACHINE_NOT_WORKING ) // ^  (has the same datecode as nameclub, probably incorrect unless both were released the same day)
 GAME( 1997, nclubv3,   stvbios, stv,      stv,      stvpc_state, init_nameclv3,         ROT0,   "Sega",                         "Name Club Ver.3 (J 970723 V1.000)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS | MACHINE_NOT_WORKING ) // no protection
+GAME( 1997, nclubv4,   stvbios, stv,      stv,      stvpc_state, init_nameclv3,         ROT0,   "Sega",                         "Name Club Ver.4 (J 971202 V1.000)", MACHINE_IMPERFECT_SOUND | MACHINE_IMPERFECT_GRAPHICS | MACHINE_NOT_WORKING ) // no protection
 GAME( 1998, nclubdis,  stvbios, stv,      stv,      stvpc_state, init_stv,              ROT0,   "Sega",                         "Name Club Disney (J 980614 V1.000)", MACHINE_NOT_WORKING ) // errors due to missing security card
 
 /* Doing something.. but not enough yet */

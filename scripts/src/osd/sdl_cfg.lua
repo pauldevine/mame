@@ -50,6 +50,17 @@ else
 	}
 end
 
+if _OPTIONS["USE_WAYLAND"]=="1" then
+	defines {
+		"SDLMAME_USE_WAYLAND",
+	}
+	if _OPTIONS["targetos"]=="linux" then
+		buildoptions {
+			backtick(pkgconfigcmd() .. " --cflags wayland-egl"),
+		}
+	end
+end
+
 if _OPTIONS["NO_USE_XINPUT"]=="1" then
 	defines {
 		"USE_XINPUT=0",
@@ -128,7 +139,7 @@ if _OPTIONS["targetos"]=="windows" then
 		defines {
 			"UNICODE",
 			"_UNICODE",
-			"_WIN32_WINNT=0x0501",
+			"_WIN32_WINNT=0x0600",
 			"WIN32_LEAN_AND_MEAN",
 			"NOMINMAX",
 		}

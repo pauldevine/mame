@@ -11,7 +11,8 @@ panel design, the 2nd version has rectangular buttons. See sc6.cpp for the
 2nd version.
 
 Hardware notes:
-- Zilog Z8 MCU(custom label, probably Z8601), 8MHz XTAL
+- Zilog Z8 MCU (probably Z8601, custom label: SR0016 1001011A01 or SR0022
+  1001011B01), 8MHz XTAL
 - buzzer, 18 leds, 8*8 chessboard buttons, module slot
 
 released modules, * denotes not dumped yet:
@@ -37,7 +38,7 @@ and one for MCS48. A12 is forced high or low to select the bank.
 #include "speaker.h"
 
 // internal artwork
-#include "fidel_msc_v1.lh" // clickable
+#include "fidel_msc_v1.lh"
 
 
 namespace {
@@ -65,8 +66,11 @@ private:
 	required_device<z8_device> m_maincpu;
 	required_device<sensorboard_device> m_board;
 	required_device<pwm_display_device> m_display;
-	required_device<dac_bit_interface> m_dac;
+	required_device<dac_1bit_device> m_dac;
 	required_ioport m_inputs;
+
+	u8 m_led_select = 0;
+	u16 m_inp_mux = 0;
 
 	// address maps
 	void main_map(address_map &map);
@@ -80,9 +84,6 @@ private:
 	u8 read_inputs();
 	u8 input_hi_r();
 	u8 input_lo_r();
-
-	u8 m_led_select = 0;
-	u16 m_inp_mux = 0;
 };
 
 void msc_state::machine_start()
@@ -97,8 +98,6 @@ void msc_state::machine_start()
 /*******************************************************************************
     I/O
 *******************************************************************************/
-
-// MCU ports/generic
 
 void msc_state::update_display()
 {
@@ -178,7 +177,7 @@ static INPUT_PORTS_START( msc )
 	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_CODE(KEYCODE_5) PORT_CODE(KEYCODE_5_PAD) PORT_NAME("PV / Queen")
 	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_CODE(KEYCODE_6) PORT_CODE(KEYCODE_6_PAD) PORT_NAME("PB / King")
 	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_CODE(KEYCODE_DEL) PORT_CODE(KEYCODE_BACKSPACE) PORT_NAME("CL")
-	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_CODE(KEYCODE_R) PORT_NAME("RE")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_CODE(KEYCODE_R) PORT_CODE(KEYCODE_N) PORT_NAME("RE")
 INPUT_PORTS_END
 
 
@@ -234,4 +233,4 @@ ROM_END
 *******************************************************************************/
 
 //    YEAR  NAME      PARENT   COMPAT  MACHINE  INPUT  CLASS      INIT        COMPANY, FULLNAME, FLAGS
-SYST( 1981, miniscco, miniscc, 0,      msc,     msc,   msc_state, empty_init, "Fidelity Electronics", "Mini Sensory Chess Challenger (1981 version)", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK )
+SYST( 1981, miniscco, miniscc, 0,      msc,     msc,   msc_state, empty_init, "Fidelity Electronics", "Mini Sensory Chess Challenger (Z8 version)", MACHINE_SUPPORTS_SAVE )

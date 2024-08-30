@@ -121,6 +121,7 @@
 #include "machine/nscsi_bus.h"
 #include "bus/nscsi/devices.h"
 #include "sound/asc.h"
+#include "video/wd90c26.h"
 
 #include "emupal.h"
 #include "screen.h"
@@ -156,7 +157,8 @@ public:
 		m_palette(*this, "palette"),
 		m_asc(*this, "asc"),
 		m_scc(*this, "scc"),
-		m_vram(*this, "vram")
+		m_vram(*this, "vram"),
+		m_vga(*this, "vga")
 	{
 	}
 
@@ -191,14 +193,14 @@ private:
 	required_device<palette_device> m_palette;
 	required_device<asc_device> m_asc;
 	required_device<z80scc_device> m_scc;
-	required_shared_ptr<u32> m_vram;
+	optional_shared_ptr<u32> m_vram;
+	optional_device<wd90c26_vga_device> m_vga;
 
 	virtual void machine_start() override;
 	virtual void machine_reset() override;
 
 	u32 screen_update_macpb140(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
 	u32 screen_update_macpb160(screen_device &screen, bitmap_ind16 &bitmap, const rectangle &cliprect);
-	u32 screen_update_macpbwd(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect);
 
 	u32 *m_ram_ptr = nullptr, *m_rom_ptr = nullptr;
 	u32 m_ram_mask = 0, m_ram_size = 0, m_rom_size = 0;
@@ -280,20 +282,13 @@ private:
 	void mac_gsc_w(uint8_t data);
 	void macgsc_palette(palette_device &palette) const;
 
-	uint32_t macwd_r(offs_t offset, uint32_t mem_mask = ~0);
-	void macwd_w(offs_t offset, uint32_t data, uint32_t mem_mask = ~0);
+	u8 m_pmu_from_via = 0, m_pmu_to_via = 0, m_pmu_ack = 0, m_pmu_req = 0;
 
-	u32 m_colors[3]{}, m_count = 0, m_clutoffs = 0, m_wd_palette[256]{};
-
-	u8 m_pmu_via_bus = 0, m_pmu_ack = 0, m_pmu_req = 0;
-	u8 pmu_data_r() { return m_pmu_via_bus; }
+	u8 pmu_p1_r() { return 0; }
+	u8 pmu_data_r() { return m_pmu_from_via; }
 	void pmu_data_w(u8 data)
 	{
-			// if the 68k has valid data on the bus, don't overwrite it
-			if (m_pmu_req)
-			{
-				m_pmu_via_bus = data;
-			}
+		m_pmu_to_via = data;
 	}
 	u8 pmu_comms_r() { return (m_pmu_req<<7); }
 	void pmu_comms_w(u8 data)
@@ -315,6 +310,8 @@ private:
 	}
 
 	u8 pmu_in_r() { return 0x20; }  // bit 5 is 0 if the Target Disk Mode should be enabled
+
+	u8 battery_r() { return 0x7f; }
 };
 
 // 4-level grayscale
@@ -491,23 +488,6 @@ u32 macpb030_state::screen_update_macpb160(screen_device &screen, bitmap_ind16 &
 			*line++ = palette[(pixels & 3)];
 		}
 	}
-	return 0;
-}
-
-u32 macpb030_state::screen_update_macpbwd(screen_device &screen, bitmap_rgb32 &bitmap, const rectangle &cliprect) /* Color PowerBooks using an off-the-shelf WD video chipset */
-{
-	u8 const *vram8 = (uint8_t *)m_vram.target();
-
-	for (int y = 0; y < 480; y++)
-	{
-		u32 *line = &bitmap.pix(y);
-		for (int x = 0; x < 640; x++)
-		{
-			u8 const pixels = vram8[(y * 640) + (BYTE4_XOR_BE(x))];
-			*line++ = m_wd_palette[pixels];
-		}
-	}
-
 	return 0;
 }
 
@@ -695,60 +675,6 @@ void macpb030_state::mac_gsc_w(uint8_t data)
 {
 }
 
-uint32_t macpb030_state::macwd_r(offs_t offset, uint32_t mem_mask)
-{
-	switch (offset)
-	{
-	case 0xf6:
-		if (m_screen->vblank())
-		{
-			return 0xffffffff;
-		}
-		else
-		{
-			return 0;
-		}
-
-	default:
-		//            printf("macwd_r: @ %x, mask %08x (PC=%x)\n", offset, mem_mask, m_maincpu->pc());
-		break;
-	}
-	return 0;
-}
-
-void macpb030_state::macwd_w(offs_t offset, uint32_t data, uint32_t mem_mask)
-{
-	switch (offset)
-	{
-	case 0xf2:
-		if (mem_mask == 0xff000000) // DAC control
-		{
-			m_clutoffs = (data >> 24);
-			m_count = 0;
-		}
-		else if (mem_mask == 0x00ff0000) // DAC data
-		{
-			m_colors[m_count++] = ((data >> 16) & 0x3f) << 2;
-			if (m_count == 3)
-			{
-				//printf("RAMDAC: color %d = %02x %02x %02x\n", m_clutoffs, m_colors[0], m_colors[1], m_colors[2]);
-				m_wd_palette[m_clutoffs] = rgb_t(m_colors[0], m_colors[1], m_colors[2]);
-				m_clutoffs++;
-				m_count = 0;
-			}
-		}
-		else
-		{
-			logerror("macwd: Unknown DAC write, data %08x, mask %08x\n", data, mem_mask);
-		}
-		break;
-
-	default:
-		//            printf("macwd_w: %x @ %x, mask %08x (PC=%x)\n", data, offset, mem_mask, m_maincpu->pc());
-		break;
-	}
-}
-
 /***************************************************************************
     ADDRESS MAPS
 ****************************************************************************/
@@ -805,10 +731,10 @@ void macpb030_state::macpb165c_map(address_map &map)
 	map(0x50f24000, 0x50f27fff).r(FUNC(macpb030_state::buserror_r)); // bus error here to make sure we aren't mistaken for another decoder
 
 	// on-board color video on 165c/180c
-	map(0xfc000000, 0xfc07ffff).ram().share("vram").mirror(0x00380000); // 512k of VRAM
-	map(0xfc400000, 0xfcefffff).rw(FUNC(macpb030_state::macwd_r), FUNC(macpb030_state::macwd_w));
-	// fc4003c8 = DAC control, fc4003c9 = DAC data
-	// fc4003da bit 3 is VBL
+	map(0xfc000000, 0xfc07ffff).rw(m_vga, FUNC(wd90c26_vga_device::mem_linear_r), FUNC(wd90c26_vga_device::mem_linear_w)).mirror(0x00380000); // 512k of VRAM
+//  map(0xfc400000, 0xfc7fffff).rw(FUNC(macpb030_state::macwd_r), FUNC(macpb030_state::macwd_w));
+	map(0xfc4003b0, 0xfc4003df).m(m_vga, FUNC(wd90c26_vga_device::io_map));
+	// something else video related? is at fc800000
 	map(0xfcff8000, 0xfcffffff).rom().region("vrom", 0x0000);
 }
 
@@ -864,7 +790,7 @@ void macpb030_state::mac_via_out_b(u8 data)
 
 u8 macpb030_state::mac_via2_in_a()
 {
-	return m_pmu_via_bus;
+	return m_pmu_to_via;
 }
 
 u8 macpb030_state::mac_via2_in_b()
@@ -874,7 +800,7 @@ u8 macpb030_state::mac_via2_in_b()
 
 void macpb030_state::mac_via2_out_a(u8 data)
 {
-	m_pmu_via_bus = data;
+	m_pmu_from_via = data;
 }
 
 void macpb030_state::mac_via2_out_b(u8 data)
@@ -900,6 +826,7 @@ void macpb030_state::macpb140(machine_config &config)
 	m_maincpu->set_dasm_override(std::function(&mac68k_dasm_override), "mac68k_dasm_override");
 
 	M50753(config, m_pmu, 3.93216_MHz_XTAL);
+	m_pmu->read_p<1>().set(FUNC(macpb030_state::pmu_p1_r));
 	m_pmu->read_p<2>().set(FUNC(macpb030_state::pmu_data_r));
 	m_pmu->write_p<2>().set(FUNC(macpb030_state::pmu_data_w));
 	m_pmu->read_p<3>().set(FUNC(macpb030_state::pmu_comms_r));
@@ -907,6 +834,7 @@ void macpb030_state::macpb140(machine_config &config)
 	m_pmu->read_p<4>().set(FUNC(macpb030_state::pmu_adb_r));
 	m_pmu->write_p<4>().set(FUNC(macpb030_state::pmu_adb_w));
 	m_pmu->read_in_p().set(FUNC(macpb030_state::pmu_in_r));
+	m_pmu->ad_in<1>().set(FUNC(macpb030_state::battery_r));
 
 	SCREEN(config, m_screen, SCREEN_TYPE_RASTER);
 	m_screen->set_refresh_hz(60.15);
@@ -982,6 +910,8 @@ void macpb030_state::macpb140(machine_config &config)
 	m_ram->set_default_size("2M");
 	m_ram->set_extra_options("4M,6M,8M");
 
+	SOFTWARE_LIST(config, "flop_mac35_orig").set_original("mac_flop_orig");
+	SOFTWARE_LIST(config, "flop_mac35_clean").set_original("mac_flop_clcracked");
 	SOFTWARE_LIST(config, "flop35_list").set_original("mac_flop");
 	SOFTWARE_LIST(config, "flop35hd_list").set_original("mac_hdflop");
 	SOFTWARE_LIST(config, "hdd_list").set_original("mac_hdd");
@@ -1096,6 +1026,8 @@ void macpb030_state::macpb160(machine_config &config)
 	m_ram->set_default_size("2M");
 	m_ram->set_extra_options("4M,6M,8M");
 
+	SOFTWARE_LIST(config, "flop_mac35_orig").set_original("mac_flop_orig");
+	SOFTWARE_LIST(config, "flop_mac35_clean").set_original("mac_flop_clcracked");
 	SOFTWARE_LIST(config, "flop35_list").set_original("mac_flop");
 	SOFTWARE_LIST(config, "hdd_list").set_original("mac_hdd");
 }
@@ -1112,10 +1044,14 @@ void macpb030_state::macpb180c(machine_config &config)
 	m_maincpu->set_clock(33000000);
 	m_maincpu->set_addrmap(AS_PROGRAM, &macpb030_state::macpb165c_map);
 
-	m_screen->set_size(800, 525);
-	m_screen->set_visarea(0, 640 - 1, 0, 480 - 1);
-	m_screen->set_screen_update(FUNC(macpb030_state::screen_update_macpbwd));
+	m_screen->set_raw(25.175_MHz_XTAL, 800, 0, 640, 524, 0, 480);
+	m_screen->set_screen_update("vga", FUNC(wd90c26_vga_device::screen_update));
 	m_screen->set_no_palette();
+
+	WD90C26(config, m_vga, 0);
+	m_vga->set_screen(m_screen);
+	// 512KB
+	m_vga->set_vram_size(0x80000);
 }
 
 void macpb030_state::macpd210(machine_config &config)

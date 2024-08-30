@@ -6,7 +6,7 @@
 Fidelity Eldorado Chess Challenger (model 6119)
 
 Hardware notes:
-- PCB label CXG262-600-001, CXG262-600-101
+- PCB label: CXG262-600-001, CXG262-600-101
 - TMP80C49AP6-6744 MCU, 2KB internal ROM, 6MHz XTAL
 - buzzer, 16 leds, 8*8 chessboard buttons
 
@@ -25,7 +25,7 @@ as seen on the PCB and also confirmed by Ron Nelson.
 #include "speaker.h"
 
 // internal artwork
-#include "fidel_eldorado.lh" // clickable
+#include "fidel_eldorado.lh"
 
 
 namespace {
@@ -53,8 +53,12 @@ private:
 	required_device<mcs48_cpu_device> m_maincpu;
 	required_device<pwm_display_device> m_display;
 	required_device<sensorboard_device> m_board;
-	required_device<dac_bit_interface> m_dac;
+	required_device<dac_1bit_device> m_dac;
 	required_ioport m_inputs;
+
+	bool m_kp_select = false;
+	u16 m_inp_mux = 0;
+	u8 m_led_select = 0;
 
 	// I/O handlers
 	void update_display();
@@ -63,10 +67,6 @@ private:
 	void control_w(u8 data);
 	int t0_r();
 	u8 input_r();
-
-	bool m_kp_select = false;
-	u16 m_inp_mux = 0;
-	u8 m_led_select = 0;
 };
 
 void eldorado_state::machine_start()
@@ -151,7 +151,7 @@ static INPUT_PORTS_START( eldorado )
 	PORT_BIT(0x10, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_CODE(KEYCODE_5) PORT_CODE(KEYCODE_5_PAD) PORT_NAME("Verify / Queen")
 	PORT_BIT(0x20, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_CODE(KEYCODE_6) PORT_CODE(KEYCODE_6_PAD) PORT_NAME("Problem / King")
 	PORT_BIT(0x40, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_CODE(KEYCODE_DEL) PORT_CODE(KEYCODE_BACKSPACE) PORT_NAME("Clear")
-	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_CODE(KEYCODE_N) PORT_NAME("New Game")
+	PORT_BIT(0x80, IP_ACTIVE_HIGH, IPT_KEYPAD) PORT_CODE(KEYCODE_R) PORT_CODE(KEYCODE_N) PORT_NAME("New Game")
 INPUT_PORTS_END
 
 
@@ -191,7 +191,7 @@ void eldorado_state::eldorado(machine_config &config)
 
 ROM_START( feldo )
 	ROM_REGION( 0x0800, "maincpu", 0 )
-	ROM_LOAD("100-1027a01", 0x0000, 0x0800, CRC(3b93b6d2) SHA1(353a741624b4c7fd74a0cf601e2e52f9914b58b8) )
+	ROM_LOAD("tmp80c49ap6-6744_100-1027a01", 0x0000, 0x0800, CRC(3b93b6d2) SHA1(353a741624b4c7fd74a0cf601e2e52f9914b58b8) )
 ROM_END
 
 } // anonymous namespace
@@ -203,4 +203,4 @@ ROM_END
 *******************************************************************************/
 
 //    YEAR  NAME   PARENT  COMPAT  MACHINE   INPUT     CLASS           INIT        COMPANY, FULLNAME, FLAGS
-SYST( 1990, feldo, 0,      0,      eldorado, eldorado, eldorado_state, empty_init, "Fidelity Electronics / CXG Systems", "Eldorado Chess Challenger", MACHINE_SUPPORTS_SAVE | MACHINE_CLICKABLE_ARTWORK )
+SYST( 1990, feldo, 0,      0,      eldorado, eldorado, eldorado_state, empty_init, "Fidelity Electronics International / CXG Systems", "Eldorado Chess Challenger", MACHINE_SUPPORTS_SAVE )

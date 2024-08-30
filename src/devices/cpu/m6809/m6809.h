@@ -26,6 +26,8 @@ DECLARE_DEVICE_TYPE(M6809, m6809_device)
 // Used by core CPU interface
 class m6809_base_device : public cpu_device
 {
+public:
+	auto sync_acknowledge_write() { return m_syncack_write_func.bind(); }
 protected:
 	// construction/destruction
 	m6809_base_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock, const device_type type, int divider);
@@ -86,7 +88,7 @@ protected:
 		ADDRESSING_MODE_EA          = 1,
 		ADDRESSING_MODE_REGISTER_A  = 2,
 		ADDRESSING_MODE_REGISTER_B  = 3,
-		ADDRESSING_MODE_REGISTER_D = 4
+		ADDRESSING_MODE_REGISTER_D  = 4
 	};
 
 	// flag bits in the cc register
@@ -171,10 +173,11 @@ protected:
 	bool                        m_lds_encountered;
 	int                         m_icount;
 	int                         m_addressing_mode;
-	PAIR16                      m_ea;               // effective address
+	PAIR16                      m_ea;                 // effective address
 
 	// Callbacks
-	devcb_write_line            m_lic_func;         // LIC pin on the 6809E
+	devcb_write_line            m_lic_func;           // LIC pin on the 6809E
+	devcb_write_line            m_syncack_write_func; // Indicates sync acknowledge buscycle
 
 	// eat cycles
 	inline void eat(int cycles)                              { m_icount -= cycles; }
@@ -277,7 +280,7 @@ private:
 	const address_space_config  m_sprogram_config;
 
 	// other state
-	uint32_t                      m_state;
+	uint32_t                    m_state;
 	bool                        m_cond;
 	bool                        m_free_run;
 

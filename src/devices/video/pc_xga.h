@@ -4,8 +4,10 @@
 #ifndef MAME_VIDEO_PC_XGA_H
 #define MAME_VIDEO_PC_XGA_H
 
-#include "screen.h"
 #include "pc_vga.h"
+
+#include "screen.h"
+
 
 class xga_copro_device : public device_t
 {
@@ -67,28 +69,5 @@ private:
 };
 
 DECLARE_DEVICE_TYPE(XGA_COPRO, xga_copro_device)
-
-class oak_oti111_vga_device : public svga_device
-{
-public:
-	oak_oti111_vga_device(const machine_config &mconfig, const char *tag, device_t *owner, uint32_t clock);
-
-	u8 xga_read(offs_t offset);
-	void xga_write(offs_t offset, u8 data);
-	u8 dac_read(offs_t offset);
-	void dac_write(offs_t offset, u8 data);
-	virtual u8 port_03d0_r(offs_t offset) override;
-	virtual void port_03d0_w(offs_t offset, uint8_t data) override;
-protected:
-	virtual void device_add_mconfig(machine_config &config) override;
-	virtual void device_start() override;
-	virtual uint16_t offset() override;
-private:
-	u8 m_oak_regs[0x3b];
-	u8 m_oak_idx;
-	required_device<xga_copro_device> m_xga;
-};
-
-DECLARE_DEVICE_TYPE(OTI111, oak_oti111_vga_device)
 
 #endif // MAME_VIDEO_PC_XGA_H

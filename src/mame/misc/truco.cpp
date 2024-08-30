@@ -267,8 +267,6 @@ private:
 };
 
 
-// video
-
 void truco_state::palette(palette_device &palette) const
 {
 	for (int i = 0; i < palette.entries(); i++)
@@ -308,8 +306,6 @@ uint32_t truco_state::screen_update(screen_device &screen, bitmap_rgb32 &bitmap,
 	return 0;
 }
 
-
-// machine
 
 /*******************************************
 *           Read/Write Handlers            *
@@ -504,7 +500,7 @@ void truco_state::truco(machine_config &config)
 
 	WATCHDOG_TIMER(config, m_watchdog).set_time(attotime::from_msec(1600)); // 1.6 seconds
 
-	pia6821_device &pia(PIA6821(config, "pia0", 0));
+	pia6821_device &pia(PIA6821(config, "pia0"));
 	pia.readpa_handler().set_ioport("P1");
 	pia.readpb_handler().set_ioport("JMPRS");
 	pia.writepa_handler().set(FUNC(truco_state::porta_w));

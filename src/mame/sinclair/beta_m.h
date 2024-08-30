@@ -36,6 +36,7 @@ public:
 	void track_w(uint8_t data);
 	void sector_w(uint8_t data);
 	void data_w(uint8_t data);
+	void turbo_w(int state);
 
 	int is_active();
 	void enable();
@@ -53,6 +54,7 @@ private:
 
 	required_device<kr1818vg93_device> m_wd179x;
 	required_device_array<floppy_connector, 4> m_floppy;
+	output_finder<4> m_floppy_led;
 	void fdc_hld_w(int state);
 	void motors_control();
 	u8 m_control;

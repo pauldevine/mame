@@ -1,5 +1,5 @@
 // license:BSD-3-Clause
-// copyright-holders:Ivan Vangelista
+// copyright-holders:
 /*
 
 TODO:
@@ -7,7 +7,6 @@ TODO:
   $3a000 contains an "= Award Decompression BIOS =" header.
   Original ASUS CUBX BIOSes actually have valid opcodes in that range, the dump should be bad.
 - ASUS CUBX fails reading RTC, needs virtualizing thru ISA.
-- Needs Riva TNT2 to be a proper PCI device;
 
 - In pcipc ez2d2m HDD boots to a Korean Windows 98SE, it will error out with a
   "Error 7 : Set up the system correctly." after driver installation. Follows dump heuristics:
@@ -73,8 +72,8 @@ Ez2DJ series:
 #include "machine/i82371eb_ide.h"
 #include "machine/i82371eb_acpi.h"
 #include "machine/i82371eb_usb.h"
-#include "video/riva128.h"
 #include "bus/isa/isa_cards.h"
+#include "bus/pci/rivatnt.h"
 //#include "bus/rs232/hlemouse.h"
 //#include "bus/rs232/null_modem.h"
 //#include "bus/rs232/rs232.h"
@@ -93,6 +92,7 @@ public:
 		m_maincpu(*this, "maincpu")
 	{ }
 
+	void cubx(machine_config &config);
 	void ez2d(machine_config &config);
 
 private:
@@ -127,20 +127,20 @@ void ez2d_state::winbond_superio_config(device_t *device)
 {
 	// TODO: Winbond w83977ef
 	w83977tf_device &fdc = *downcast<w83977tf_device *>(device);
-//	fdc.set_sysopt_pin(1);
+//  fdc.set_sysopt_pin(1);
 	fdc.gp20_reset().set_inputline(":maincpu", INPUT_LINE_RESET);
 	fdc.gp25_gatea20().set_inputline(":maincpu", INPUT_LINE_A20);
 	fdc.irq1().set(":pci:07.0", FUNC(i82371eb_isa_device::pc_irq1_w));
 	fdc.irq8().set(":pci:07.0", FUNC(i82371eb_isa_device::pc_irq8n_w));
-//	fdc.txd1().set(":serport0", FUNC(rs232_port_device::write_txd));
-//	fdc.ndtr1().set(":serport0", FUNC(rs232_port_device::write_dtr));
-//	fdc.nrts1().set(":serport0", FUNC(rs232_port_device::write_rts));
-//	fdc.txd2().set(":serport1", FUNC(rs232_port_device::write_txd));
-//	fdc.ndtr2().set(":serport1", FUNC(rs232_port_device::write_dtr));
-//	fdc.nrts2().set(":serport1", FUNC(rs232_port_device::write_rts));
+//  fdc.txd1().set(":serport0", FUNC(rs232_port_device::write_txd));
+//  fdc.ndtr1().set(":serport0", FUNC(rs232_port_device::write_dtr));
+//  fdc.nrts1().set(":serport0", FUNC(rs232_port_device::write_rts));
+//  fdc.txd2().set(":serport1", FUNC(rs232_port_device::write_txd));
+//  fdc.ndtr2().set(":serport1", FUNC(rs232_port_device::write_dtr));
+//  fdc.nrts2().set(":serport1", FUNC(rs232_port_device::write_rts));
 }
 
-void ez2d_state::ez2d(machine_config &config)
+void ez2d_state::cubx(machine_config &config)
 {
 	// actually a Celeron at 533 MHz
 	PENTIUM2(config, m_maincpu, 90'000'000);
@@ -188,9 +188,14 @@ void ez2d_state::ez2d(machine_config &config)
 	serport1.cts_handler().set("board4:w83977tf", FUNC(fdc37c93x_device::ncts2_w));
 #endif
 
-	// TODO: Riva TNT2
-	RIVA128(config, "pci:01.0:00.0", 0);
+	PCI_SLOT(config, "pci:01.0:1", agp_cards, 0, 0, 1, 2, 3, "rivatnt").set_fixed(true);
+}
 
+void ez2d_state::ez2d(machine_config &config)
+{
+	ez2d_state::cubx(config);
+
+	PCI_SLOT(config.replace(), "pci:01.0:1", agp_cards, 0, 0, 1, 2, 3, "rivatnt2_m64").set_fixed(true);
 	// TODO: Sound Blaster Live CT4830
 }
 
@@ -200,15 +205,18 @@ void ez2d_state::ez2d(machine_config &config)
 
 ***************************************************************************/
 
+ROM_START( asuscubx )
+	ROM_REGION32_LE(0x40000, "pci:07.0", 0)
+	ROM_LOAD("cubx1007.awd", 0x00000, 0x40000, CRC(42a35507) SHA1(4e428e8419e533424d9564b290e2d7f4931744ff) )
+ROM_END
+
 ROM_START( ez2d2m )
 	ROM_REGION32_LE(0x40000, "pci:07.0", 0)
-	ROM_LOAD("ez2dancer2ndmove_motherboard_v29c51002t_award_bios", 0x00000, 0x40000, BAD_DUMP CRC(02a5e84b) SHA1(94b341d268ce9d42597c68bc98c3b8b62e137205) ) // 29f020
-//	ROM_LOAD("cubx1007.awd", 0x00000, 0x40000, CRC(42a35507) SHA1(4e428e8419e533424d9564b290e2d7f4931744ff) )
-
-	ROM_REGION( 0x10000, "vbios", 0 )
-	// nVidia TNT2 Model 64 video BIOS (not from provided dump)
-	// TODO: move to PCI device once we have one
-	ROM_LOAD( "62090211.rom", 0x000000, 0x00b000, CRC(5669135b) SHA1(b704ce0d20b71e40563d12bcc45bd1240227be74) )
+	ROM_SYSTEM_BIOS( 0, "1006cu", "OEM" )
+	// From HDD "C:\Install\Bios1006"
+	ROMX_LOAD("1006cu.awd", 0x00000, 0x40000, CRC(086c320a) SHA1(4b4c07e594602c467e678187f80e3a5c1445bd30), ROM_BIOS(0) )
+	ROM_SYSTEM_BIOS( 1, "award", "Award (unknown rev)" )
+	ROMX_LOAD("ez2dancer2ndmove_motherboard_v29c51002t_award_bios", 0x00000, 0x40000, BAD_DUMP CRC(02a5e84b) SHA1(94b341d268ce9d42597c68bc98c3b8b62e137205), ROM_BIOS(1) ) // 29f020
 
 	DISK_REGION( "ide:0:hdd" )
 	DISK_IMAGE( "ez2d2m", 0, SHA1(431f0bef3b81f83dad3818bca8994faa8ce9d5b7) )
@@ -217,4 +225,6 @@ ROM_END
 } // anonymous namespace
 
 
-GAME( 2001, ez2d2m, 0, ez2d, ez2d, ez2d_state, empty_init, ROT0, "Amuse World", "Ez2dancer 2nd Move",  MACHINE_IS_SKELETON )
+COMP( 2000, asuscubx, 0,   0, cubx, 0, ez2d_state, empty_init, "ASUS",        "CUBX", MACHINE_NOT_WORKING | MACHINE_NO_SOUND)
+
+GAME( 2001, ez2d2m, 0, ez2d, ez2d, ez2d_state, empty_init, ROT0,   "Amuse World", "Ez2dancer 2nd Move",  MACHINE_NOT_WORKING | MACHINE_NO_SOUND )

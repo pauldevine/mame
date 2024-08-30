@@ -149,7 +149,6 @@ void pwrmacg3_state::pwrmacg3(machine_config &config)
 
 	heathrow_device &heathrow(HEATHROW(config, "pci:10.0", 0));
 	heathrow.set_maincpu_tag("maincpu");
-	heathrow.set_pci_root_tag(":pci:00.0", AS_DATA);
 
 	// Apple's documentation says systems with the 4.0f2 ROM use a Rage II+, but
 	// the 4.0f2 ROM won't init the Rage if the PCI ID is 4755 (II+), only 4754 (Rage II).
@@ -159,7 +158,8 @@ void pwrmacg3_state::pwrmacg3(machine_config &config)
 
 	MACADB(config, m_macadb, 15.6672_MHz_XTAL);
 
-	CUDA(config, m_cuda, CUDA_341S0060);
+	CUDA_V2XX(config, m_cuda, XTAL(32'768));
+	m_cuda->set_default_bios_tag("341s0060");
 	m_cuda->reset_callback().set(FUNC(pwrmacg3_state::cuda_reset_w));
 	m_cuda->linechange_callback().set(m_macadb, FUNC(macadb_device::adb_linechange_w));
 	m_cuda->via_clock_callback().set(heathrow, FUNC(heathrow_device::cb1_w));

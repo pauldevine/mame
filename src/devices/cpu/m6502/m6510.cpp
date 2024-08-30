@@ -2,7 +2,7 @@
 // copyright-holders:Olivier Galibert
 /***************************************************************************
 
-    m6510.c
+    m6510.cpp
 
     6502 with 6 i/o pins, also known as 8500
 
@@ -64,9 +64,9 @@ void m6510_device::device_start()
 void m6510_device::device_reset()
 {
 	m6502_device::device_reset();
-	dir = 0x00;
-	port = 0x00;
-	drive = 0x00;
+	dir = 0xff;
+	port = 0xff;
+	drive = 0xff;
 	update_port();
 }
 

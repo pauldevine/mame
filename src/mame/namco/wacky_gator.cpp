@@ -92,7 +92,7 @@ private:
 	uint8_t   m_adpcm_ctrl;
 
 	uint8_t   m_alligators_ctrl;
-	int     m_motors_pos[5];
+	int       m_motors_pos[5] = { };
 };
 
 
@@ -199,6 +199,7 @@ void wackygtr_state::machine_reset()
 	m_adpcm_pos = 0;
 	m_adpcm_sel = 0;
 	m_adpcm_ctrl = 0x80;
+	m_alligators_ctrl = 0;
 }
 
 void wackygtr_state::set_digits(int p, uint8_t value)
@@ -351,4 +352,4 @@ ROM_END
 } // anonymous namespace
 
 
-GAME(1988, wackygtr,    0, wackygtr,  wackygtr, wackygtr_state, empty_init, ROT0, "Namco (Data East license)", "Wacky Gator (US)", MACHINE_IS_SKELETON_MECHANICAL | MACHINE_CLICKABLE_ARTWORK)
+GAME(1988, wackygtr,    0, wackygtr,  wackygtr, wackygtr_state, empty_init, ROT0, "Namco (Data East license)", "Wacky Gator (US)", MACHINE_IS_SKELETON_MECHANICAL)

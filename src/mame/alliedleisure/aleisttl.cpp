@@ -41,12 +41,12 @@ namespace {
 #define V_TOTAL         (0x105+1)       // 262
 #define H_TOTAL         (0x1C6+1)       // 454
 
-#define HBSTART                 (H_TOTAL)
-#define HBEND                   (80)
-#define VBSTART                 (V_TOTAL)
-#define VBEND                   (16)
+#define HBSTART         (H_TOTAL)
+#define HBEND           (80)
+#define VBSTART         (V_TOTAL)
+#define VBEND           (16)
 
-#define HRES_MULT                   (1)
+#define HRES_MULT       (1)
 // end
 
 
@@ -137,4 +137,4 @@ ROM_END
 } // anonymous namespace
 
 
-GAME( 1975, sburners, 0, sburners, 0, sburners_state, empty_init, ROT0, "Allied Leisure", "Street Burners [TTL]", MACHINE_IS_SKELETON )
+GAME( 1975, sburners, 0, sburners, 0, sburners_state, empty_init, ROT0, "Allied Leisure", "Street Burners", MACHINE_IS_SKELETON )
