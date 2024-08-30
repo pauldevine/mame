@@ -51,8 +51,9 @@
 #define LOG_DISK    (1U << 3)
 #define LOG_BITS    (1U << 4)
 
-#define VERBOSE (LOG_VIA | LOG_DISK | LOG_BITS)
-#define LOG_OUTPUT_STREAM std::cout
+//#define VERBOSE (LOG_VIA | LOG_DISK | LOG_SCP)
+//#define VERBOSE (LOG_VIA | LOG_DISK | LOG_SCP)
+//#define LOG_OUTPUT_STREAM std::cout
 
 #include "logmacro.h"
 
@@ -261,6 +262,9 @@ victor_9000_fdc_device::victor_9000_fdc_device(const machine_config &mconfig, co
 	cur_live.tm = attotime::never;
 	cur_live.state = IDLE;
 	cur_live.next_state = IDLE;
+	cur_live.sync = true;
+	cur_live.syn = true;
+	cur_live.sync_byte_counter = 0;
 }
 
 
@@ -276,6 +280,8 @@ void victor_9000_fdc_device::device_start()
 	t_gen = timer_alloc(FUNC(victor_9000_fdc_device::gen_tick), this);
 	t_tach[0] = timer_alloc(FUNC(victor_9000_fdc_device::tach0_tick), this);
 	t_tach[1] = timer_alloc(FUNC(victor_9000_fdc_device::tach1_tick), this);
+	m_syn_reset_timer = timer_alloc(FUNC(victor_9000_fdc_device::syn_reset_callback), this);
+	m_brdy_reset_timer = timer_alloc(FUNC(victor_9000_fdc_device::brdy_reset_callback), this);
 
 	// state saving
 	save_item(NAME(m_data));
@@ -355,6 +361,22 @@ TIMER_CALLBACK_MEMBER(victor_9000_fdc_device::tach1_tick)
 	LOGSCP("%s TACH1 %u\n", machine().time().as_string(), m_tach[1]);
 }
 
+TIMER_CALLBACK_MEMBER(victor_9000_fdc_device::syn_reset_callback)
+{
+    cur_live.syn = true;  // SYN goes back high (inactive)
+    cur_live.syn_changed = true;
+    m_syn_cb(cur_live.syn);  // Inform the system that SYN is now high
+    LOGSCP("%s syn_reset_callback %u\n", machine().time().as_string(), cur_live.syn);
+    //m_irq_cb(true);  // Signal the rising edge to the PIC, completing the IRQ0 trigger
+}
+
+TIMER_CALLBACK_MEMBER(victor_9000_fdc_device::brdy_reset_callback)
+{
+    cur_live.brdy = true;  // BRDY goes back high (inactive)
+    m_via5->write_ca1(cur_live.brdy);  //update the VIA with the new state
+    LOGSCP("%s syn_reset_callback %u\n", machine().time().as_string(), cur_live.syn);
+    //m_irq_cb(true);  // Signal the rising edge to the PIC, completing the IRQ0 trigger
+}
 
 //-------------------------------------------------
 //  floppy_p1_r -
@@ -1224,12 +1246,12 @@ void victor_9000_fdc_device::live_abort()
 	cur_live.state = IDLE;
 	cur_live.next_state = IDLE;
 
-	cur_live.brdy = 1;
+	cur_live.brdy = true;
 	cur_live.lbrdy_changed = true;
-	cur_live.sync = 1;
-	cur_live.syn = 1;
+	cur_live.sync = true;
+	cur_live.syn = true;
 	cur_live.syn_changed = true;
-	cur_live.gcr_err = 1;
+	cur_live.gcr_err = true;
 }
 
 void victor_9000_fdc_device::handle_write_data_state(const attotime &limit) 
@@ -1263,8 +1285,7 @@ void victor_9000_fdc_device::handle_read_byte_state(const attotime &limit)
     //or SYNC is handled
     cur_live.bit_counter = 0;
     cur_live.shift_reg = 0;
-    cur_live.brdy = true;                     //BRDY is active low
-    m_via5->write_ca1(cur_live.brdy);
+    
     attotime next = cur_live.tm + m_period;
     LOGBITS("%s:%s handle_read_byte_state\n", cur_live.tm.as_string(), next.as_string());
     
@@ -1299,6 +1320,7 @@ void victor_9000_fdc_device::handle_read_byte_state(const attotime &limit)
 				return;
 			} else {
 				cur_live.next_state = BYTE_READY;
+				checkpoint();
 				return;
 			}
 		}
@@ -1314,6 +1336,10 @@ void victor_9000_fdc_device::handle_byte_ready_state(const attotime &limit)
 	cur_live.next_state = IDLE;
 	attotime next = cur_live.tm + m_period;
 	LOGBITS("%s:%s handle_byte_ready_state\n", cur_live.tm.as_string(), next.as_string());
+
+	LOGDISK("%s:%s handle_byte_ready_state cur_live.brdy:%s cur_live.sync:%s\n", cur_live.tm.as_string(), next.as_string(),
+		cur_live.brdy ? "true" : "false", cur_live.sync ? "true" : "false");
+	
 	
 	LOGBITS("%s:%s cyl %u bc %u sr %03x sbc %u sBC %u i %03x e %02x\n",
 			cur_live.tm.as_string(),next.as_string(),get_floppy()->get_cyl(),
@@ -1324,9 +1350,7 @@ void victor_9000_fdc_device::handle_byte_ready_state(const attotime &limit)
 	cur_live.sync_byte_counter = 0;
 	cur_live.sync = true;  //SYNC is active low
 	m_via6->write_pa7(cur_live.sync); // Set the SYNC signal high to stop sync counting
-	cur_live.syn = false;
-	m_syn_cb(cur_live.syn);
-
+	cur_live.syn = true;   //SYN is active low
 
 	//the 6522 needs to latch the byte with BRDY
 	cur_live.i = cur_live.shift_reg;
@@ -1349,18 +1373,19 @@ void victor_9000_fdc_device::handle_byte_ready_state(const attotime &limit)
 	cur_live.i = cur_live.drw << 10 | cur_live.shift_reg;
 	cur_live.e = left_decoded << 4 | right_decoded;
 
-	cur_live.brdy = true;             //BRDY is active low, but inverted in the victor9k.cpp file
+	cur_live.brdy = false;             //BRDY is active low
 
 	cur_live.bit_counter = 0;
 	LOGDISK("%s BRDY %u shift_reg: %03x i: %03x e: %03x\n", cur_live.tm.as_string(), 
 		cur_live.brdy, cur_live.shift_reg, cur_live.i, cur_live.e);
 	
-	//tell the 6522 to latch the byte as it's ready BRDY
-	cur_live.lbrdy_changed = false;       
+	//tell the 6522 to latch the byte as it's ready BRDY   
 	m_via5->write_ca1(cur_live.brdy);
+	m_brdy_reset_timer->adjust(attotime::from_usec(1));
 
 	//after the 6522 has the byte, we need the 8088 to latch it with LBRDY
 	m_lbrdy_cb(cur_live.brdy);
+	cur_live.lbrdy_changed = true; 
 
 	cur_live.next_state = READ_BYTE;
 	checkpoint();
@@ -1376,7 +1401,7 @@ void victor_9000_fdc_device::handle_sync_found_state(const attotime &limit) {
 
 	attotime next = cur_live.tm + m_period;
 
-	LOGDISK("%s:%s handle_sync_found_state - Start SYNC search\n", cur_live.tm.as_string(), next.as_string());
+	LOGDISK("%s:%s handle_sync_found_state - Start SYNC found\n", cur_live.tm.as_string(), next.as_string());
 
 	if (cur_live.gcr_err == false)
 	{
@@ -1385,7 +1410,8 @@ void victor_9000_fdc_device::handle_sync_found_state(const attotime &limit) {
 		return;
 	}
 
-	LOGBITS("%s:%s handle_sync_found_state\n", cur_live.tm.as_string(), next.as_string());
+	LOGDISK("%s:%s handle_sync_found_state cur_live.brdy:%s cur_live.sync:%s\n", cur_live.tm.as_string(), next.as_string(),
+		cur_live.brdy ? "true" : "false", cur_live.sync ? "true" : "false");
 	
 	LOGBITS("%s:%s cyl %u bc %u sr %03x sbc %u sBC %u i %03x e %02x\n",
 			cur_live.tm.as_string(),next.as_string(),get_floppy()->get_cyl(),
@@ -1393,7 +1419,7 @@ void victor_9000_fdc_device::handle_sync_found_state(const attotime &limit) {
 			cur_live.sync_byte_counter,cur_live.i,cur_live.e);
 
 	//if we're here we don't have a byte ready, make sure that signal is off
-    cur_live.brdy = false;        //BRDY is active low, but inverted in the victor9k.cpp file
+    cur_live.brdy = true;        //BRDY is active low
 	cur_live.lbrdy_changed = true;
 	m_via5->write_ca1(cur_live.brdy);
 	m_lbrdy_cb(cur_live.brdy);
@@ -1409,12 +1435,18 @@ void victor_9000_fdc_device::handle_sync_found_state(const attotime &limit) {
     // 10 SYNC bytes in a row indicate SYN should fire to the 8088
     if (cur_live.sync_byte_counter == 15)  
     {
+        cur_live.sync_byte_counter = 0;
         LOGDISK("%s:%s Sector header SYN detected, calling PIC\n", cur_live.tm.as_string(), next.as_string());
-        cur_live.syn = true;          //SYN active low, but inverted in the victor9k.cpp
+        cur_live.syn = false;          //SYN active low
         cur_live.syn_changed = true;
+        checkpoint();  // Save the current state
         m_syn_cb(cur_live.syn);  // Call back to indicate syn signal to PIC IR0 called, inform 8088 of sync
-        //m_irq_cb(true);
+        //m_irq_cb(false);
         cur_live.next_state = IDLE;
+
+        // Schedule an event to reset SYN to high after 1 µsecond
+		m_syn_reset_timer->adjust(attotime::from_usec(1));
+		checkpoint();
         return;
     }
 
@@ -1507,12 +1539,15 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
             break;
         }
 
-        if (cur_live.tm > limit)
-			return; 
+        
 
         // Update time
         cur_live.tm += attotime::from_usec(21.3); 
-        cur_live.state = cur_live.next_state;
+        cur_live.state = cur_live.next_state;   
+
+        if (cur_live.tm > limit)
+			return; 
+
     }
 }
 

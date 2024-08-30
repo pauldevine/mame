@@ -56,6 +56,8 @@ protected:
 	TIMER_CALLBACK_MEMBER(gen_tick);
 	TIMER_CALLBACK_MEMBER(tach0_tick);
 	TIMER_CALLBACK_MEMBER(tach1_tick);
+	TIMER_CALLBACK_MEMBER(syn_reset_callback);
+	TIMER_CALLBACK_MEMBER(brdy_reset_callback);
 
 private:
 	static const int rpm[0x100];
@@ -179,6 +181,8 @@ private:
 	live_info cur_live, checkpoint_live;
 	fdc_pll_t cur_pll, checkpoint_pll;
 	emu_timer *t_gen, *t_tach[2];
+	emu_timer *m_syn_reset_timer;
+	emu_timer *m_brdy_reset_timer;
 
 	floppy_image_device* get_floppy();
 	void live_start();
