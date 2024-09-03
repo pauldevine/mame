@@ -19992,6 +19992,7 @@ cb3c                            // (c) 199? Dyna Electronics
 cb3d                            // (c) 199? Dyna Electronics
 cb3e                            // 199? bootleg
 cb3f                            // 199? bootleg
+cb3g                            // (c) 199? Dyna Electronics
 cherry96                        // bootleg
 chry10                          // bootleg
 chryangl                        // (c) 199? Dyna Electronics
@@ -20079,6 +20080,7 @@ lucky8i                         // 199?, Eagle, licensed by Wing
 lucky8j                         // 199?, hack
 lucky8k                         // (c) 1989 Wing. With CPU NEC D315-5136
 lucky8l                         // (c) 1989 Wing Co. Ltd
+lucky8m                         // (c) 1989 Wing Co. Ltd
 luckybar                        // unknown
 luckylad                        // (c) 1985 Wing Co. Ltd
 magodds                         // 198? (c) Micro Manufacturing Ltd.
@@ -20235,7 +20237,8 @@ amazonia                        // (c) 1999
 amazonkp                        // (c) 1999
 chessc2                         // (c) 200?
 extradrw                        // (c) 200?
-fruitpar                        // (c) 200?
+fruitpar                        // (c) 1999
+fruitpara						// (c) 1999
 gonefsh2                        // (c) 200?
 jking02                         // (c) 200?
 klxyj                           // (c) 200?
@@ -21822,7 +21825,8 @@ lordofkbp                       // bootleg
 makaiden                        // (c) 1988 (Japan)
 monkelf                         // bootleg
 p47                             // (c) 1988
-p47b                            // bootleg
+p47a                            // (c) 1988
+p47bl                           // bootleg
 p47j                            // (c) 1988 (Japan)
 p47je                           // (c) 1988 (Japan, Export)
 peekaboo                        // (c) 1993
@@ -28698,6 +28702,7 @@ draw88pkr                       // 1988, BTE, Inc.
 
 @source:misc/amuzy.cpp
 amhbattl
+boobood
 docchift
 mmhammer
 shpchamp
@@ -28939,6 +28944,7 @@ blackbdb                        //
 dslayrr                         //
 dslayrra                        //
 hawaii                          //
+hwparty                         //
 oligam                          //
 rasce                           //
 
@@ -29142,10 +29148,11 @@ castfpt                         // Fortune Pot
 castrev                         // Revolution
 
 @source:misc/cb2001.cpp
-cb2001                          // (c) 2001 Dyna Electronics
+cb2001                          // (c) 2000 Dyna Electronics
+cb5                             // (c) 1997 Dyna Electronics
 ndongmul2                       // (c) 1999 Dyna Electronics
-scherrym                        // (c) 1997 Dyna Electronics
 scherrymp                       // (c) 1997 Dyna Electronics
+scherrymp10u                    // (c) 1997 Dyna Electronics
 
 @source:misc/chameleonrx1.cpp
 chamrx1                         // 2003
@@ -32446,6 +32453,9 @@ mekd4                           // 1980 Motorola Evaluation Kit
 
 @source:motorola/mekd5.cpp
 mekd5                           // 1980 Motorola Evaluation Kit
+
+@source:motorola/mex68kecb.cpp
+mex68kecb                       // (c) 1981 Motorola
 
 @source:motorola/mvme162.cpp
 mvme162                         // (c) 1993 Motorola
@@ -39296,20 +39306,21 @@ ssf2mdb
 twinktmb
 
 @source:sega/megadriv_rad.cpp
-rad_sf2                         // (c)2004 Radica
-rad_sf2uk                       // (c)2004 Radica
+dgunl3227
+mdtvp1j
+msi_sf2
+ra145
 rad_gen1                        // (c)2004 Radica
 rad_gen2                        // (c)2004 Radica
 rad_md1
 rad_md1uk
 rad_md2uk
-rad_ssoc                        // (c)2004 Radica
+rad_orun
+rad_sf2                         // (c)2004 Radica
+rad_sf2uk                       // (c)2004 Radica
 rad_sonic
 rad_sonicuk
-rad_orun
-msi_sf2
-dgunl3227
-ra145
+rad_ssoc                        // (c)2004 Radica
 
 @source:sega/megadriv_sunmix.cpp
 sbubsm                          // (c) 1996 Sun Mixing
@@ -42037,6 +42048,11 @@ dsb46                           //
 @source:skeleton/dual68.cpp
 dual68                          //
 
+@source:skeleton/dyna_d0404.cpp
+cm2005
+cm2005a
+cm2005b
+
 @source:skeleton/e100.cpp
 e100                            //
 
@@ -42202,6 +42218,7 @@ kkcount
 
 @source:skeleton/koto_zevio.cpp
 dbzonep                         //
+dbzscout
 
 @source:skeleton/kron.cpp
 kron180                         // 1995 Kron Ltd, Ukraine
@@ -42484,6 +42501,9 @@ systec                          //
 
 @source:skeleton/systel1.cpp
 systel100                       //
+
+@source:skeleton/syvg.cpp
+luckyvl
 
 @source:skeleton/tavernie.cpp
 cpu09                           //
@@ -45335,6 +45355,7 @@ jak_ths
 wrlshunt                        // Wireless: Hunting Video Game System
 
 @source:tvgames/generalplus_gpl16250_spi.cpp
+anpanbd
 bkrankp
 prailpls
 
@@ -45704,6 +45725,7 @@ rad_ssxp                        //
 taikodp                         //
 taitons1                        //
 taitons2                        //
+tak_daig
 tak_geig                        //
 tcarnavi                        //
 tomcpin                         //
