@@ -1387,7 +1387,7 @@ void victor_9000_fdc_device::handle_byte_ready_state(const attotime &limit)
 	m_lbrdy_cb(cur_live.brdy);
 	cur_live.lbrdy_changed = true; 
 
-	cur_live.next_state = READ_BYTE;
+	cur_live.next_state = IDLE;
 	checkpoint();
 	return;
 }
