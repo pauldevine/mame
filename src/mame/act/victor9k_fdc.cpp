@@ -52,8 +52,8 @@
 #define LOG_BITS    (1U << 4)
 
 //#define VERBOSE (LOG_VIA | LOG_DISK | LOG_SCP)
-//#define VERBOSE (LOG_VIA | LOG_DISK | LOG_SCP)
-//#define LOG_OUTPUT_STREAM std::cout
+#define VERBOSE (LOG_VIA | LOG_DISK | LOG_SCP)
+#define LOG_OUTPUT_STREAM std::cout
 
 #include "logmacro.h"
 
@@ -1292,7 +1292,7 @@ void victor_9000_fdc_device::handle_read_byte_state(const attotime &limit)
     while(cur_live.tm < limit)
     {
 		// read bit
-		uint8_t bit = !pll_get_next_bit(cur_live.tm, get_floppy(), limit);
+		uint8_t bit = pll_get_next_bit(cur_live.tm, get_floppy(), limit);
 		//uint8_t bit = 1;
 
 		if(bit < 0)
@@ -1363,6 +1363,9 @@ void victor_9000_fdc_device::handle_byte_ready_state(const attotime &limit)
 	{
 		cur_live.gcr_err = false;  //GCR ERR is active low
 		LOGDISK("%s GCR ERR %u\n", cur_live.tm.as_string(), cur_live.gcr_err);
+		cur_live.next_state = IDLE;
+		checkpoint();
+		return;
 	}
 
 	LOGBITS("%s GCR NIBBLES left: %03x right: %03x shift_reg: %03x left_decoded: %03x right_decoded: %03x\n", 
@@ -1433,9 +1436,9 @@ void victor_9000_fdc_device::handle_sync_found_state(const attotime &limit) {
     LOGDISK("%s:%s SYNC byte found, count: %u\n", cur_live.tm.as_string(), next.as_string(), cur_live.sync_byte_counter);
 
     // 10 SYNC bytes in a row indicate SYN should fire to the 8088
-    if (cur_live.sync_byte_counter == 15)  
+    if (cur_live.sync_byte_counter == 5)  
     {
-        cur_live.sync_byte_counter = 0;
+        //cur_live.sync_byte_counter = 0;
         LOGDISK("%s:%s Sector header SYN detected, calling PIC\n", cur_live.tm.as_string(), next.as_string());
         cur_live.syn = false;          //SYN active low
         cur_live.syn_changed = true;
