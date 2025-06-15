@@ -16,6 +16,8 @@
 #include "imagedev/floppy.h"
 #include "machine/6522via.h"
 #include "machine/fdc_pll.h"
+#include <iostream>
+#include <unordered_map>
 
 
 
@@ -44,19 +46,24 @@ public:
 
 protected:
 	// device-level overrides
-	virtual void device_start() override ATTR_COLD;
-	virtual void device_reset() override ATTR_COLD;
+	virtual void device_start() override;
+	virtual void device_reset() override;
 
 	// optional information overrides
-	virtual const tiny_rom_entry *device_rom_region() const override ATTR_COLD;
-	virtual void device_add_mconfig(machine_config &config) override ATTR_COLD;
+	virtual const tiny_rom_entry *device_rom_region() const override;
+	virtual void device_add_mconfig(machine_config &config) override;
 
 	TIMER_CALLBACK_MEMBER(gen_tick);
 	TIMER_CALLBACK_MEMBER(tach0_tick);
 	TIMER_CALLBACK_MEMBER(tach1_tick);
+	TIMER_CALLBACK_MEMBER(syn_reset_callback);
+	TIMER_CALLBACK_MEMBER(brdy_reset_callback);
 
 private:
 	static const int rpm[0x100];
+
+	static const uint16_t SHIFT_REG_MASK = 0x3ff;
+	static const uint16_t SYNC_HEADER = 0x3ff;
 
 	enum
 	{
@@ -65,8 +72,20 @@ private:
 	};
 
 	enum {
+		DRIVE_WRITE,
+		DRIVE_READ
+	};
+
+	enum {
 		IDLE,
-		RUNNING,
+	    READ_BYTE,
+	    BYTE_READY,
+	    SYNC_FOUND,
+	    SYNC_WRITE,
+	    WRITE_BYTE,
+	    WRITE_SYNC,
+	    CHANGED_RW_MODE,
+	    RUNNING,
 		RUNNING_SYNCPOINT
 	};
 
@@ -87,8 +106,8 @@ private:
 		int bit_counter;
 		int sync_bit_counter;
 		int sync_byte_counter;
-		int brdy;
-		bool lbrdy_changed;
+		int brdy;                   //BRDY = Byte Ready = signal to 6522 to latch the byte to the A port
+		bool lbrdy_changed;         //LBRDY = Latch Byte Ready = singal to 8088 to latch the byte from the 6522
 		int sync;
 		int syn;
 		bool syn_changed;
@@ -147,8 +166,9 @@ private:
 	int m_stp[2];
 	int m_drive;
 	int m_side;
-	int m_drw;
+	int m_drive_rw;
 	int m_erase;
+
 	uint8_t m_wd;
 	int m_wrsync;
 
@@ -161,6 +181,8 @@ private:
 	live_info cur_live, checkpoint_live;
 	fdc_pll_t cur_pll, checkpoint_pll;
 	emu_timer *t_gen, *t_tach[2];
+	emu_timer *m_syn_reset_timer;
+	emu_timer *m_brdy_reset_timer;
 
 	floppy_image_device* get_floppy();
 	void live_start();
@@ -172,13 +194,20 @@ private:
 	bool pll_write_next_bit(bool bit, attotime &tm, floppy_image_device *floppy, const attotime &limit);
 	void pll_save_checkpoint();
 	void pll_retrieve_checkpoint();
+	int decode_data_gcr(uint8_t gcr);
 	void checkpoint();
 	void rollback();
-	void live_delay(int state);
+	void live_delay();
 	void live_sync();
 	void live_abort();
+	void handle_read_byte_state(const attotime &limit = attotime::never);
+	void handle_write_data_state(const attotime &limit = attotime::never);
+	void handle_byte_ready_state(const attotime &limit = attotime::never);
+	void handle_sync_found_state(const attotime &limit = attotime::never);
+	void handle_sync_write_state(const attotime &limit = attotime::never);
 	void live_run(const attotime &limit = attotime::never);
-
+	void live_run_orig(const attotime &limit = attotime::never);
+	
 	static void floppy_formats(format_registration &fr);
 
 	uint8_t floppy_p1_r();
