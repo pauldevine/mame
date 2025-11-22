@@ -1293,7 +1293,7 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 			if (sync)
 			{
 				cur_live.sync_bit_counter = 0;
-				cur_live.sync_byte_counter = 10; // TODO 9 in schematics
+				cur_live.sync_byte_counter = 0;  // Start counting from 0
 			}
 			else if (!cur_live.sync)
 			{
