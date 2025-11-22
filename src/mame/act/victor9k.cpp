@@ -9,7 +9,6 @@ TODO:
 - expansion bus:
   * Z80 card
   * RAM cards
-  * clock cards
 
 *******************************************************************************/
 
@@ -18,6 +17,7 @@ TODO:
 #include "victor9k_fdc.h"
 #include "victor9k_hdc.h"
 #include "victor9k_kb.h"
+#include "victor9k_rtc.h"
 
 #include "bus/centronics/ctronics.h"
 #include "bus/ieee488/ieee488.h"
@@ -110,6 +110,7 @@ public:
 		m_fdc(*this, "fdc"),
 		m_scsibus(*this, "scsi"),
 		m_hdc(*this, "scsi:7:v9kdmaib"),
+		m_rtc(*this, "rtc"),
 		m_centronics(*this, "centronics"),
 		m_rs232a(*this, RS232_A_TAG),
 		m_rs232b(*this, RS232_B_TAG),
@@ -155,6 +156,7 @@ private:
 	required_device<victor_9000_fdc_device> m_fdc;
 	required_device<nscsi_bus_device> m_scsibus;
 	required_device<victor_9000_hdc_device> m_hdc;
+	optional_device<victor9k_rtc_device> m_rtc;
 	required_device<centronics_device> m_centronics;
 	required_device<rs232_port_device> m_rs232a;
 	required_device<rs232_port_device> m_rs232b;
@@ -245,6 +247,7 @@ void victor9k_state::victor9k_mem(address_map &map)
 	map(0xef300, 0xef3ff).rw(m_hdc, FUNC(victor_9000_hdc_device::read), FUNC(victor_9000_hdc_device::write));
 	map(0xf0000, 0xf0fff).mirror(0x1000).ram().share("video_ram");
 	map(0xf8000, 0xf9fff).mirror(0x6000).rom().region(I8088_TAG, 0);
+	map(0xfc000, 0xfc007).rw("rtc", FUNC(victor9k_rtc_device::read), FUNC(victor9k_rtc_device::write));
 }
 
 
@@ -845,6 +848,8 @@ void victor9k_state::victor9k(machine_config &config)
 	VICTOR9K_KEYBOARD(config, m_kb, 0);
 	m_kb->kbrdy_handler().set(FUNC(victor9k_state::kbrdy_w));
 	m_kb->kbdata_handler().set(FUNC(victor9k_state::kbdata_w));
+
+	VICTOR9K_RTC(config, m_rtc, 0);
 
 	VICTOR_9000_FDC(config, m_fdc, 0);
 	m_fdc->irq_wr_callback().set(FUNC(victor9k_state::fdc_irq_w));
