@@ -4,19 +4,18 @@
 
     Victor 9000 Real Time Clock Expansion Card
 
-    The RTC expansion card uses a Dallas DS1215/DS1315 "Phantom Time Chip"
-    which is a battery-backed RTC that requires no address lines.
+    The RTC expansion card uses a HD146818 (Hitachi version of MC146818)
+    Real Time Clock Plus RAM chip with 128 bytes of battery-backed RAM.
 
-    The DS1215/DS1315 is accessed via pattern recognition. The chip monitors
-    reads from a specific memory range (typically ROM space). When the correct
-    64-bit pattern is recognized, the chip becomes active and provides time
-    data for the next 64 read cycles.
+    The MC146818/HD146818 has a standard two-register interface:
+    - Offset 0: Address register (write-only)
+    - Offset 1: Data register (read/write)
 
-    Pattern: 5Ca3_3ca5 (LSB first, reading bit 0 of each address)
-
-    Historical Victor 9000 RTC cards used this approach, and modern
-    reproductions (like the Victor9000-RAM project) continue to use
-    the DS1315 variant.
+    The chip provides:
+    - Real-time clock with alarm
+    - 128 bytes of battery-backed CMOS RAM (64 bytes on some variants)
+    - Periodic interrupt capability
+    - Square wave output
 
 *******************************************************************************/
 
@@ -49,12 +48,6 @@ victor9k_rtc_device::victor9k_rtc_device(const machine_config &mconfig, const ch
 
 void victor9k_rtc_device::device_start()
 {
-	// Allocate a small ROM space for the DS1215 to monitor
-	// The DS1215 needs to see ROM reads to detect its activation pattern
-	m_rom = std::make_unique<uint8_t[]>(8);
-
-	// Fill with 0xFF (unprogrammed ROM pattern)
-	std::fill_n(m_rom.get(), 8, 0xff);
 }
 
 //-------------------------------------------------
@@ -71,7 +64,7 @@ void victor9k_rtc_device::device_reset()
 
 void victor9k_rtc_device::device_add_mconfig(machine_config &config)
 {
-	DS1215(config, m_rtc, 32.768_kHz_XTAL);
+	MC146818(config, m_rtc, 32.768_kHz_XTAL);
 }
 
 //-------------------------------------------------
@@ -80,18 +73,25 @@ void victor9k_rtc_device::device_add_mconfig(machine_config &config)
 
 uint8_t victor9k_rtc_device::read(offs_t offset)
 {
-	// The DS1215 monitors reads and provides data when activated
-	// We pass through the ROM data with the RTC bit overlaid on bit 0
-	uint8_t data = m_rom[offset & 0x07];
+	/*
+	    Memory map:
+	    offset 0: Address register (write-only, but some clones allow read)
+	    offset 1: Data register
+	*/
 
-	// Read from DS1215 - this returns the time bit when active
-	uint8_t rtc_data = m_rtc->read();
+	switch (offset & 1)
+	{
+	case 0:
+		// Address register - typically write-only on real hardware
+		// but some systems read it back
+		return m_rtc->get_address();
 
-	// Combine ROM data with RTC bit 0
-	// The DS1215 only uses bit 0 for data I/O
-	data = (data & 0xfe) | (rtc_data & 0x01);
+	case 1:
+		// Data register
+		return m_rtc->data_r();
+	}
 
-	return data;
+	return 0xff;
 }
 
 //-------------------------------------------------
@@ -100,7 +100,22 @@ uint8_t victor9k_rtc_device::read(offs_t offset)
 
 void victor9k_rtc_device::write(offs_t offset, uint8_t data)
 {
-	// The DS1215 monitors writes for the activation pattern
-	// Bit 0 of the written data is used for pattern matching
-	m_rtc->write(data);
+	/*
+	    Memory map:
+	    offset 0: Address register
+	    offset 1: Data register
+	*/
+
+	switch (offset & 1)
+	{
+	case 0:
+		// Address register - selects which internal register to access
+		m_rtc->address_w(data);
+		break;
+
+	case 1:
+		// Data register - reads/writes the selected internal register
+		m_rtc->data_w(data);
+		break;
+	}
 }

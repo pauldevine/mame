@@ -4,11 +4,8 @@
 
     Victor 9000 Real Time Clock Expansion Card
 
-    The RTC expansion card uses a Dallas DS1215/DS1315 "Phantom Time Chip"
-    which is a battery-backed RTC that requires no address lines.
-
-    The DS1215/DS1315 is accessed via pattern recognition and appears
-    in the ROM address space.
+    The RTC expansion card uses a HD146818 (Hitachi version of MC146818)
+    Real Time Clock Plus RAM chip with 128 bytes of battery-backed RAM.
 
 *******************************************************************************/
 
@@ -17,7 +14,7 @@
 
 #pragma once
 
-#include "machine/ds1215.h"
+#include "machine/mc146818.h"
 
 //******************************************************************************
 //  TYPE DEFINITIONS
@@ -42,8 +39,7 @@ protected:
 	virtual void device_add_mconfig(machine_config &config) override ATTR_COLD;
 
 private:
-	required_device<ds1215_device> m_rtc;
-	std::unique_ptr<uint8_t[]> m_rom;
+	required_device<mc146818_device> m_rtc;
 };
 
 // device type definition
