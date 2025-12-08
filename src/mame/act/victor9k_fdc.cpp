@@ -8,7 +8,7 @@
 
 /*
 
-    value   error description
+    Error codes seen in Victor 9000 diagnostics:
 
     01      no sync pulse detected
     02      no header track
@@ -19,9 +19,44 @@
     07      data checksum error
     08      sync too long
     99      not a system disc
-
     11      Noise on sync
     FF      No sync (bad or unformatted disk)
+
+*/
+
+/*
+    Victor 9000 FDC - SYNC vs SYN Signal Distinction
+    =================================================
+
+    The Victor 9000 uses two distinct synchronization signals that are often confused:
+
+    1. SYNC (active low, _SYNC signal):
+       - Raw pattern detection: asserted when shift register contains 0x3FF (10 consecutive 1-bits)
+       - This is the fundamental sync pattern used in GCR encoding
+       - Pulses during the sync field as each sync byte (0x3FF) is detected
+       - Read by CPU via VIA6 PA7
+       - Think: "I see a sync pattern RIGHT NOW"
+
+    2. SYN (active low, _SYN signal):
+       - Level signal: asserted after counting sufficient consecutive sync bytes
+       - Indicates "we are properly synchronized and ready for data"
+       - Triggers after 15 sync bytes for header sync, or 5 sync bytes for data sync
+       - Output to CPU via syn_cb callback
+       - Think: "I've seen ENOUGH sync to be confident we're synchronized"
+
+    Victor 9000 Disk Format:
+    - Header sync: 15 GCR bytes (150 bits of 0x3FF pattern) → triggers SYN
+    - Sector header: 0x07 (ID) + track + sector + checksum (all GCR encoded)
+    - Gap 1: 8 bytes of 0x55
+    - Data sync: 5 GCR bytes (50 bits of 0x3FF pattern) → triggers SYN
+    - Data block: 0x08 (ID) + 512 data bytes + checksum (all GCR encoded)
+    - Gap 2: 8 bytes of 0x55
+
+    Sync Counting Logic:
+    - When SYNC pattern (0x3FF) detected: reset sync_byte_counter to 0
+    - As we continue through sync field: increment sync_byte_counter for each sync byte
+    - When sync_byte_counter reaches 15: assert SYN (we're synchronized)
+    - When non-sync byte seen: break sync counting sequence
 
 */
 
@@ -1256,12 +1291,13 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 					return;
 			}
 
-			// clock read shift register
+			// Clock read shift register (10 bits for GCR)
 			cur_live.shift_reg <<= 1;
 			cur_live.shift_reg |= bit;
 			cur_live.shift_reg &= 0x3ff;
 
-			// sync
+			// SYNC signal (active low) - asserted when shift register contains 0x3FF
+			// This is the raw sync pattern: 10 consecutive 1-bits
 			int sync = !(cur_live.shift_reg == 0x3ff);
 
 			// bit counter
@@ -1289,27 +1325,34 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 				}
 			}
 
-			// sync counter
+			// Sync byte counter - counts consecutive sync bytes (0x3FF patterns)
+			// This is used to determine when to assert the SYN signal
 			if (sync)
 			{
+				// Not in sync (sync is active low): reset counters
 				cur_live.sync_bit_counter = 0;
 				cur_live.sync_byte_counter = 0;  // Start counting from 0
 			}
 			else if (!cur_live.sync)
 			{
+				// In sync (sync is active low): count bits and bytes
 				cur_live.sync_bit_counter++;
 				if (cur_live.sync_bit_counter == 10)
 				{
+					// Completed one 10-bit sync byte
 					cur_live.sync_bit_counter = 0;
 					cur_live.sync_byte_counter++;
 					if (cur_live.sync_byte_counter == 16)
 					{
+						// Wrap counter at 16 to prevent overflow
 						cur_live.sync_byte_counter = 0;
 					}
 				}
 			}
 
-			// syn
+			// SYN signal (active low) - asserted when we've counted 15 consecutive sync bytes
+			// This indicates we're properly synchronized (header sync threshold)
+			// Note: Data sync uses 5 bytes, but the hardware only checks for 15
 			int syn = !(cur_live.sync_byte_counter == 15);
 
 			// GCR decoder
