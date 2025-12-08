@@ -1433,6 +1433,44 @@ void victor_9000_fdc_device::setup_gcr_decoder()
 	cur_live.e = m_gcr_rom->base()[cur_live.i];
 }
 
+//-------------------------------------------------
+//  Signal change detection helper
+//-------------------------------------------------
+
+bool victor_9000_fdc_device::detect_signal_changes(int sync, int syn, int gcr_err)
+{
+	// Detect changes in SYNC, SYN, and GCR_ERR signals
+	// Returns true if a syncpoint is needed
+	bool syncpoint = false;
+
+	// Check for SYNC signal change
+	if (sync != cur_live.sync)
+	{
+		LOGDISK("%s SYNC %u\n", cur_live.tm.as_string(), sync);
+		cur_live.sync = sync;
+		syncpoint = true;
+	}
+
+	// Check for SYN signal change
+	if (syn != cur_live.syn)
+	{
+		LOGDISK("%s SYN %u\n", cur_live.tm.as_string(), syn);
+		cur_live.syn = syn;
+		cur_live.syn_changed = true;
+		syncpoint = true;
+	}
+
+	// Check for GCR_ERR signal change
+	if (gcr_err != cur_live.gcr_err)
+	{
+		LOGDISK("%s GCR ERR %u\n", cur_live.tm.as_string(), gcr_err);
+		cur_live.gcr_err = gcr_err;
+		syncpoint = true;
+	}
+
+	return syncpoint;
+}
+
 void victor_9000_fdc_device::live_run(const attotime &limit)
 {
 	if(cur_live.state == IDLE || cur_live.next_state != -1)
@@ -1515,27 +1553,9 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 			else
 				LOGBITS("%s cyl %u writing bit %u bc %u sr %03x i %03x e %02x\n",cur_live.tm.as_string(),get_floppy()->get_cyl(),write_bit,cur_live.bit_counter,cur_live.shift_reg_write,cur_live.i,cur_live.e);
 
-			if (sync != cur_live.sync)
-			{
-				LOGDISK("%s SYNC %u\n", cur_live.tm.as_string(),sync);
-				cur_live.sync = sync;
+			// Detect signal changes (SYNC, SYN, GCR_ERR) and set syncpoint if needed
+			if (detect_signal_changes(sync, syn, gcr_err))
 				syncpoint = true;
-			}
-
-			if (syn != cur_live.syn)
-			{
-				LOGDISK("%s SYN %u\n", cur_live.tm.as_string(),syn);
-				cur_live.syn = syn;
-				cur_live.syn_changed = true;
-				syncpoint = true;
-			}
-
-			if (gcr_err != cur_live.gcr_err)
-			{
-				LOGDISK("%s GCR ERR %u\n", cur_live.tm.as_string(),gcr_err);
-				cur_live.gcr_err = gcr_err;
-				syncpoint = true;
-			}
 
 			if (syncpoint)
 			{

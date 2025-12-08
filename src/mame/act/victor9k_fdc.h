@@ -200,6 +200,10 @@ private:
 	// Helper function for GCR decoding
 	void setup_gcr_decoder();
 
+	// Helper function for signal change detection
+	// Returns true if a syncpoint is needed
+	bool detect_signal_changes(int sync, int syn, int gcr_err);
+
 	static void floppy_formats(format_registration &fr);
 
 	uint8_t floppy_p1_r();
