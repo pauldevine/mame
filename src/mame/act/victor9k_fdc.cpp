@@ -1257,6 +1257,40 @@ void victor_9000_fdc_device::live_abort()
 	cur_live.gcr_err = 1;
 }
 
+//-------------------------------------------------
+//  State machine handlers (stubs - not yet active)
+//-------------------------------------------------
+
+void victor_9000_fdc_device::handle_read_byte_state(const attotime &limit)
+{
+	// TODO: Will be implemented incrementally
+	// For now, this stub does nothing
+}
+
+void victor_9000_fdc_device::handle_byte_ready_state(const attotime &limit)
+{
+	// TODO: Will be implemented incrementally
+	// For now, this stub does nothing
+}
+
+void victor_9000_fdc_device::handle_sync_found_state(const attotime &limit)
+{
+	// TODO: Will be implemented incrementally
+	// For now, this stub does nothing
+}
+
+void victor_9000_fdc_device::handle_write_byte_state(const attotime &limit)
+{
+	// TODO: Will be implemented incrementally
+	// For now, this stub does nothing
+}
+
+void victor_9000_fdc_device::handle_sync_write_state(const attotime &limit)
+{
+	// TODO: Will be implemented incrementally
+	// For now, this stub does nothing
+}
+
 void victor_9000_fdc_device::live_run(const attotime &limit)
 {
 	if(cur_live.state == IDLE || cur_live.next_state != -1)

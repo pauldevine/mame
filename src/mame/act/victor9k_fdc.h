@@ -66,7 +66,12 @@ private:
 
 	enum {
 		IDLE,
-		RUNNING,
+		READ_BYTE,       // Reading bits, building 10-bit GCR symbol
+		BYTE_READY,      // GCR byte complete, signal CPU
+		SYNC_FOUND,      // Detected sync pattern, counting sync bytes
+		WRITE_BYTE,      // Writing GCR encoded byte
+		SYNC_WRITE,      // Writing sync patterns
+		RUNNING,         // Legacy monolithic state (current implementation)
 		RUNNING_SYNCPOINT
 	};
 
@@ -184,6 +189,13 @@ private:
 	void live_sync();
 	void live_abort();
 	void live_run(const attotime &limit = attotime::never);
+
+	// State machine handlers (not yet used - will be activated incrementally)
+	void handle_read_byte_state(const attotime &limit);
+	void handle_byte_ready_state(const attotime &limit);
+	void handle_sync_found_state(const attotime &limit);
+	void handle_write_byte_state(const attotime &limit);
+	void handle_sync_write_state(const attotime &limit);
 
 	static void floppy_formats(format_registration &fr);
 
