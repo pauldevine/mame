@@ -1258,7 +1258,7 @@ void victor_9000_fdc_device::live_abort()
 }
 
 //-------------------------------------------------
-//  State machine handlers (stubs - not yet active)
+//  State machine handlers (incrementally activated)
 //-------------------------------------------------
 
 void victor_9000_fdc_device::handle_read_byte_state(const attotime &limit)
@@ -1269,8 +1269,40 @@ void victor_9000_fdc_device::handle_read_byte_state(const attotime &limit)
 
 void victor_9000_fdc_device::handle_byte_ready_state(const attotime &limit)
 {
-	// TODO: Will be implemented incrementally
-	// For now, this stub does nothing
+	// This handler processes byte completion (when bit_counter == 9)
+	// Note: Currently called inline from RUNNING, not via state transition
+	// The 'limit' parameter is unused but kept for future state machine compatibility
+
+	// Calculate byte ready signal (active low when bit_counter == 9)
+	int brdy = !(cur_live.bit_counter == 9);
+
+	// Handle write shift register
+	if (!brdy)
+	{
+		// Byte ready: load write shift register with GCR encoded value
+		cur_live.shift_reg_write = GCR_ENCODE(cur_live.e, cur_live.i);
+		LOGDISK("%s load write shift register %03x\n", cur_live.tm.as_string(), cur_live.shift_reg_write);
+	}
+	else
+	{
+		// Not byte ready: clock write shift register
+		cur_live.shift_reg_write <<= 1;
+		cur_live.shift_reg_write &= 0x3ff;
+	}
+
+	// Handle BRDY signal state changes
+	if (brdy != cur_live.brdy)
+	{
+		LOGDISK("%s BRDY %u\n", cur_live.tm.as_string(), brdy);
+		if (!brdy)
+		{
+			// Byte ready: signal CPU
+			cur_live.lbrdy_changed = true;
+			LOGDISK("%s LBRDY 0 : %02x\n", cur_live.tm.as_string(), GCR_DECODE(cur_live.e, cur_live.i));
+		}
+		cur_live.brdy = brdy;
+		// Note: syncpoint flag is set in RUNNING when this returns
+	}
 }
 
 void victor_9000_fdc_device::handle_sync_found_state(const attotime &limit)
@@ -1417,42 +1449,22 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 			attotime next = cur_live.tm + m_period;
 			LOGDISK("%s:%s cyl %u bit %u sync %u bc %u sr %03x sbc %u sBC %u syn %u i %03x e %02x\n",cur_live.tm.as_string(),next.as_string(),get_floppy()->get_cyl(),bit,sync,cur_live.bit_counter,cur_live.shift_reg,cur_live.sync_bit_counter,cur_live.sync_byte_counter,syn,cur_live.i,cur_live.e);
 
-			// byte ready
-			int brdy = !(cur_live.bit_counter == 9);
+			// Byte ready processing - handle write shift register and BRDY signaling
+			// Save old BRDY state to detect changes
+			int old_brdy = cur_live.brdy;
+			handle_byte_ready_state(limit);
+			// If BRDY changed, we need a syncpoint
+			if (cur_live.brdy != old_brdy)
+				syncpoint = true;
 
-			// GCR error
+			// GCR error (check after byte ready processing)
+			int brdy = cur_live.brdy;  // Get current BRDY state from handler
 			int gcr_err = !(brdy || BIT(cur_live.e, 3));
 
 			if (cur_live.drw)
 				LOGBITS("%s cyl %u bit %u sync %u bc %u sr %03x i %03x e %02x\n",cur_live.tm.as_string(),get_floppy()->get_cyl(),bit,sync,cur_live.bit_counter,cur_live.shift_reg,cur_live.i,cur_live.e);
 			else
 				LOGBITS("%s cyl %u writing bit %u bc %u sr %03x i %03x e %02x\n",cur_live.tm.as_string(),get_floppy()->get_cyl(),write_bit,cur_live.bit_counter,cur_live.shift_reg_write,cur_live.i,cur_live.e);
-
-			if (!brdy)
-			{
-				// load write shift register
-				cur_live.shift_reg_write = GCR_ENCODE(cur_live.e, cur_live.i);
-
-				LOGDISK("%s load write shift register %03x\n",cur_live.tm.as_string(),cur_live.shift_reg_write);
-			}
-			else
-			{
-				// clock write shift register
-				cur_live.shift_reg_write <<= 1;
-				cur_live.shift_reg_write &= 0x3ff;
-			}
-
-			if (brdy != cur_live.brdy)
-			{
-				LOGDISK("%s BRDY %u\n", cur_live.tm.as_string(),brdy);
-				if (!brdy)
-				{
-					cur_live.lbrdy_changed = true;
-					LOGDISK("%s LBRDY 0 : %02x\n", cur_live.tm.as_string(), GCR_DECODE(cur_live.e, cur_live.i));
-				}
-				cur_live.brdy = brdy;
-				syncpoint = true;
-			}
 
 			if (sync != cur_live.sync)
 			{
