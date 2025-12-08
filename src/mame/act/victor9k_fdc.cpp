@@ -1307,8 +1307,42 @@ void victor_9000_fdc_device::handle_byte_ready_state(const attotime &limit)
 
 void victor_9000_fdc_device::handle_sync_found_state(const attotime &limit)
 {
-	// TODO: Will be implemented incrementally
-	// For now, this stub does nothing
+	// This handler processes sync byte counting to determine when to assert SYN
+	// Note: Currently called inline from RUNNING, not via state transition
+	// The 'limit' parameter is unused but kept for future state machine compatibility
+
+	// Get current SYNC signal state (active low when we have 0x3FF in shift register)
+	int sync = cur_live.sync;
+
+	// Sync byte counter - counts consecutive sync bytes (0x3FF patterns)
+	// This is used to determine when to assert the SYN signal
+	if (sync)
+	{
+		// Not in sync (sync is active low): reset counters
+		cur_live.sync_bit_counter = 0;
+		cur_live.sync_byte_counter = 0;  // Start counting from 0
+	}
+	else if (!sync)
+	{
+		// In sync (sync is active low): count bits and bytes
+		cur_live.sync_bit_counter++;
+		if (cur_live.sync_bit_counter == GCR_BITS_PER_BYTE)
+		{
+			// Completed one 10-bit sync byte
+			cur_live.sync_bit_counter = 0;
+			cur_live.sync_byte_counter++;
+			if (cur_live.sync_byte_counter == SYNC_COUNTER_MAX)
+			{
+				// Wrap counter at 16 to prevent overflow
+				cur_live.sync_byte_counter = 0;
+			}
+		}
+	}
+
+	// SYN signal (active low) - asserted when we've counted 15 consecutive sync bytes
+	// This indicates we're properly synchronized (header sync threshold)
+	// Note: Data sync uses 5 bytes, but the hardware only checks for 15
+	// (Caller will detect syn changes and set syncpoint accordingly)
 }
 
 void victor_9000_fdc_device::handle_write_byte_state(const attotime &limit)
@@ -1404,34 +1438,11 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 				}
 			}
 
-			// Sync byte counter - counts consecutive sync bytes (0x3FF patterns)
-			// This is used to determine when to assert the SYN signal
-			if (sync)
-			{
-				// Not in sync (sync is active low): reset counters
-				cur_live.sync_bit_counter = 0;
-				cur_live.sync_byte_counter = 0;  // Start counting from 0
-			}
-			else if (!cur_live.sync)
-			{
-				// In sync (sync is active low): count bits and bytes
-				cur_live.sync_bit_counter++;
-				if (cur_live.sync_bit_counter == GCR_BITS_PER_BYTE)
-				{
-					// Completed one 10-bit sync byte
-					cur_live.sync_bit_counter = 0;
-					cur_live.sync_byte_counter++;
-					if (cur_live.sync_byte_counter == SYNC_COUNTER_MAX)
-					{
-						// Wrap counter at 16 to prevent overflow
-						cur_live.sync_byte_counter = 0;
-					}
-				}
-			}
+			// Sync byte counting - process sync field and determine SYN signal
+			handle_sync_found_state(limit);
 
-			// SYN signal (active low) - asserted when we've counted 15 consecutive sync bytes
-			// This indicates we're properly synchronized (header sync threshold)
-			// Note: Data sync uses 5 bytes, but the hardware only checks for 15
+			// Calculate SYN signal (active low) based on sync byte count
+			// Asserted when we've counted 15 consecutive sync bytes (header sync threshold)
 			int syn = !(cur_live.sync_byte_counter == SYNC_HEADER_THRESHOLD);
 
 			// GCR decoder
