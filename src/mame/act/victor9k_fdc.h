@@ -197,6 +197,9 @@ private:
 	void handle_write_byte_state(const attotime &limit);
 	void handle_sync_write_state(const attotime &limit);
 
+	// Helper function for GCR decoding
+	void setup_gcr_decoder();
+
 	static void floppy_formats(format_registration &fr);
 
 	uint8_t floppy_p1_r();
