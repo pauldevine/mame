@@ -1300,6 +1300,16 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 	{
 		switch(cur_live.state)
 		{
+		// New state machine handlers (not yet active - fall through to RUNNING)
+		case READ_BYTE:
+		case BYTE_READY:
+		case SYNC_FOUND:
+		case WRITE_BYTE:
+		case SYNC_WRITE:
+			// TODO: Activate handlers incrementally
+			// For now, treat these states as RUNNING
+			[[fallthrough]];
+
 		case RUNNING:
 		{
 			bool syncpoint = false;
