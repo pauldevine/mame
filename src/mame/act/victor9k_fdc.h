@@ -70,6 +70,13 @@ private:
 		RUNNING_SYNCPOINT
 	};
 
+	// Sync field constants
+	static constexpr uint16_t SYNC_PATTERN = 0x3FF;      // 10 consecutive 1-bits
+	static constexpr int GCR_BITS_PER_BYTE = 10;         // GCR uses 10-bit symbols
+	static constexpr int SYNC_HEADER_THRESHOLD = 15;     // Header sync: 15 bytes
+	static constexpr int SYNC_DATA_THRESHOLD = 5;        // Data sync: 5 bytes (unused by hardware)
+	static constexpr int SYNC_COUNTER_MAX = 16;          // Counter wraps at 16
+
 	struct live_info {
 		attotime tm;
 		int state, next_state;

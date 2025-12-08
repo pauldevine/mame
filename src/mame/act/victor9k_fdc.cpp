@@ -1294,23 +1294,25 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 			// Clock read shift register (10 bits for GCR)
 			cur_live.shift_reg <<= 1;
 			cur_live.shift_reg |= bit;
-			cur_live.shift_reg &= 0x3ff;
+			cur_live.shift_reg &= SYNC_PATTERN;
 
 			// SYNC signal (active low) - asserted when shift register contains 0x3FF
 			// This is the raw sync pattern: 10 consecutive 1-bits
-			int sync = !(cur_live.shift_reg == 0x3ff);
+			int sync = !(cur_live.shift_reg == SYNC_PATTERN);
 
-			// bit counter
+			// Bit counter - tracks bits within a 10-bit GCR symbol
 			if (cur_live.drw)
 			{
 				if (!sync)
 				{
+					// SYNC detected (active low): reset bit counter
 					cur_live.bit_counter = 0;
 				}
 				else if (cur_live.sync)
 				{
+					// No SYNC: count bits for GCR byte assembly
 					cur_live.bit_counter++;
-					if (cur_live.bit_counter == 10)
+					if (cur_live.bit_counter == GCR_BITS_PER_BYTE)
 					{
 						cur_live.bit_counter = 0;
 					}
@@ -1318,8 +1320,9 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 			}
 			else
 			{
+				// Write mode: always count bits
 				cur_live.bit_counter++;
-				if (cur_live.bit_counter == 10)
+				if (cur_live.bit_counter == GCR_BITS_PER_BYTE)
 				{
 					cur_live.bit_counter = 0;
 				}
@@ -1337,12 +1340,12 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 			{
 				// In sync (sync is active low): count bits and bytes
 				cur_live.sync_bit_counter++;
-				if (cur_live.sync_bit_counter == 10)
+				if (cur_live.sync_bit_counter == GCR_BITS_PER_BYTE)
 				{
 					// Completed one 10-bit sync byte
 					cur_live.sync_bit_counter = 0;
 					cur_live.sync_byte_counter++;
-					if (cur_live.sync_byte_counter == 16)
+					if (cur_live.sync_byte_counter == SYNC_COUNTER_MAX)
 					{
 						// Wrap counter at 16 to prevent overflow
 						cur_live.sync_byte_counter = 0;
@@ -1353,7 +1356,7 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 			// SYN signal (active low) - asserted when we've counted 15 consecutive sync bytes
 			// This indicates we're properly synchronized (header sync threshold)
 			// Note: Data sync uses 5 bytes, but the hardware only checks for 15
-			int syn = !(cur_live.sync_byte_counter == 15);
+			int syn = !(cur_live.sync_byte_counter == SYNC_HEADER_THRESHOLD);
 
 			// GCR decoder
 			if (cur_live.drw)
