@@ -1263,8 +1263,45 @@ void victor_9000_fdc_device::live_abort()
 
 void victor_9000_fdc_device::handle_read_byte_state(const attotime &limit)
 {
-	// TODO: Will be implemented incrementally
-	// For now, this stub does nothing
+	// This handler processes bit-by-bit reading in read mode
+	// Note: Currently called inline from RUNNING, not via state transition
+
+	// Read one bit from the PLL (only in read mode)
+	if (cur_live.drw)
+	{
+		int bit = pll_get_next_bit(cur_live.tm, get_floppy(), limit);
+		if(bit < 0)
+			return;  // Hit time limit, will resume later
+
+		// Clock read shift register (10 bits for GCR)
+		cur_live.shift_reg <<= 1;
+		cur_live.shift_reg |= bit;
+		cur_live.shift_reg &= SYNC_PATTERN;
+
+		// Calculate SYNC signal (active low when shift register contains 0x3FF)
+		// This is the raw sync pattern: 10 consecutive 1-bits
+		// Note: We calculate but don't store it - RUNNING will detect changes
+		int sync = !(cur_live.shift_reg == SYNC_PATTERN);
+
+		// Manage bit counter in read mode
+		if (!sync)
+		{
+			// SYNC detected (active low): reset bit counter
+			cur_live.bit_counter = 0;
+		}
+		else if (cur_live.sync)
+		{
+			// No SYNC: count bits for GCR byte assembly
+			cur_live.bit_counter++;
+			if (cur_live.bit_counter == GCR_BITS_PER_BYTE)
+			{
+				cur_live.bit_counter = 0;
+			}
+		}
+
+		// Note: cur_live.sync is NOT updated here - RUNNING will update it
+		// after detecting changes for syncpoint handling
+	}
 }
 
 void victor_9000_fdc_device::handle_byte_ready_state(const attotime &limit)
@@ -1383,53 +1420,22 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 			if (cur_live.tm > limit)
 				return;
 
-			// read bit
-			int bit = 0;
-			if (cur_live.drw)
-			{
-				bit = pll_get_next_bit(cur_live.tm, get_floppy(), limit);
-				if(bit < 0)
-					return;
-			}
+			// Read bit and process shift register (read mode)
+			// This handles: PLL read, shift register, SYNC detection, bit counter
+			handle_read_byte_state(limit);
 
-			// write bit
+			// If read hit time limit, return (handler updated cur_live.tm via PLL)
+			if (cur_live.drw && cur_live.tm > limit)
+				return;
+
+			// Write bit (write mode)
 			int write_bit = 0;
 			if (!cur_live.drw) // TODO WPS
 			{
 				write_bit = BIT(cur_live.shift_reg_write, 9);
 				if (pll_write_next_bit(write_bit, cur_live.tm, get_floppy(), limit))
 					return;
-			}
 
-			// Clock read shift register (10 bits for GCR)
-			cur_live.shift_reg <<= 1;
-			cur_live.shift_reg |= bit;
-			cur_live.shift_reg &= SYNC_PATTERN;
-
-			// SYNC signal (active low) - asserted when shift register contains 0x3FF
-			// This is the raw sync pattern: 10 consecutive 1-bits
-			int sync = !(cur_live.shift_reg == SYNC_PATTERN);
-
-			// Bit counter - tracks bits within a 10-bit GCR symbol
-			if (cur_live.drw)
-			{
-				if (!sync)
-				{
-					// SYNC detected (active low): reset bit counter
-					cur_live.bit_counter = 0;
-				}
-				else if (cur_live.sync)
-				{
-					// No SYNC: count bits for GCR byte assembly
-					cur_live.bit_counter++;
-					if (cur_live.bit_counter == GCR_BITS_PER_BYTE)
-					{
-						cur_live.bit_counter = 0;
-					}
-				}
-			}
-			else
-			{
 				// Write mode: always count bits
 				cur_live.bit_counter++;
 				if (cur_live.bit_counter == GCR_BITS_PER_BYTE)
@@ -1437,6 +1443,13 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 					cur_live.bit_counter = 0;
 				}
 			}
+
+			// Calculate SYNC signal from current shift register
+			// (active low when shift register contains 0x3FF)
+			int sync = !(cur_live.shift_reg == SYNC_PATTERN);
+
+			// Get the bit value for logging (last bit shifted into shift register)
+			int bit = cur_live.shift_reg & 1;
 
 			// Sync byte counting - process sync field and determine SYN signal
 			handle_sync_found_state(limit);
