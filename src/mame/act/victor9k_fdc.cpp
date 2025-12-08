@@ -1384,8 +1384,23 @@ void victor_9000_fdc_device::handle_sync_found_state(const attotime &limit)
 
 void victor_9000_fdc_device::handle_write_byte_state(const attotime &limit)
 {
-	// TODO: Will be implemented incrementally
-	// For now, this stub does nothing
+	// This handler processes bit-by-bit writing in write mode
+	// Note: Currently called inline from RUNNING, not via state transition
+
+	// Write one bit to the PLL (only in write mode)
+	if (!cur_live.drw) // TODO WPS (write protect sense)
+	{
+		int write_bit = BIT(cur_live.shift_reg_write, 9);
+		if (pll_write_next_bit(write_bit, cur_live.tm, get_floppy(), limit))
+			return;  // Hit time limit, will resume later
+
+		// Write mode: always count bits
+		cur_live.bit_counter++;
+		if (cur_live.bit_counter == GCR_BITS_PER_BYTE)
+		{
+			cur_live.bit_counter = 0;
+		}
+	}
 }
 
 void victor_9000_fdc_device::handle_sync_write_state(const attotime &limit)
@@ -1428,21 +1443,16 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 			if (cur_live.drw && cur_live.tm > limit)
 				return;
 
-			// Write bit (write mode)
-			int write_bit = 0;
-			if (!cur_live.drw) // TODO WPS
-			{
-				write_bit = BIT(cur_live.shift_reg_write, 9);
-				if (pll_write_next_bit(write_bit, cur_live.tm, get_floppy(), limit))
-					return;
+			// Write bit and process bit counter (write mode)
+			// This handles: PLL write, bit counter
+			handle_write_byte_state(limit);
 
-				// Write mode: always count bits
-				cur_live.bit_counter++;
-				if (cur_live.bit_counter == GCR_BITS_PER_BYTE)
-				{
-					cur_live.bit_counter = 0;
-				}
-			}
+			// If write hit time limit, return (handler updated cur_live.tm via PLL)
+			if (!cur_live.drw && cur_live.tm > limit)
+				return;
+
+			// Get write bit value for logging
+			int write_bit = BIT(cur_live.shift_reg_write, 9);
 
 			// Calculate SYNC signal from current shift register
 			// (active low when shift register contains 0x3FF)
