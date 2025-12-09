@@ -1560,10 +1560,10 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 			break;
 		}
 
-		// New state machine handlers (not yet active - fall through to RUNNING)
 		case SYNC_WRITE:
-			// TODO: Activate handlers incrementally
-			// For now, treat these states as RUNNING
+			// SYNC_WRITE is reserved for future functionality
+			// (writing sync patterns with special handling)
+			// For now, treat as RUNNING
 			[[fallthrough]];
 
 		case RUNNING:
