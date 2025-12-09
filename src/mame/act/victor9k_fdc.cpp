@@ -1480,8 +1480,29 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 	{
 		switch(cur_live.state)
 		{
-		// New state machine handlers (not yet active - fall through to RUNNING)
 		case READ_BYTE:
+		{
+			// READ_BYTE state: Read one bit and update shift register
+			// This is the first active state handler in our refactoring
+
+			if (cur_live.tm > limit)
+				return;
+
+			// Read bit and process shift register (read mode)
+			// This handles: PLL read, shift register, SYNC detection, bit counter
+			handle_read_byte_state(limit);
+
+			// If read hit time limit, return (handler updated cur_live.tm via PLL)
+			if (cur_live.drw && cur_live.tm > limit)
+				return;
+
+			// Transition to RUNNING to handle rest of processing
+			// (Eventually this will transition to more specific states)
+			cur_live.state = RUNNING;
+			break;
+		}
+
+		// New state machine handlers (not yet active - fall through to RUNNING)
 		case BYTE_READY:
 		case SYNC_FOUND:
 		case WRITE_BYTE:
