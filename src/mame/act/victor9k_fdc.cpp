@@ -1133,9 +1133,22 @@ void victor_9000_fdc_device::live_start()
 	cur_live.wrsync = m_wrsync;
 	cur_live.erase = m_erase;
 
-	// Initialize to the appropriate state based on read/write mode
-	// cur_live.drw: true = read mode, false = write mode
-	cur_live.state = cur_live.drw ? READ_BYTE : WRITE_BYTE;
+	// Initialize to the appropriate state based on read/write mode and wrsync
+	if (cur_live.drw)
+	{
+		// Read mode: always use READ_BYTE
+		cur_live.state = READ_BYTE;
+	}
+	else if (cur_live.wrsync)
+	{
+		// Write mode with wrsync active: writing sync patterns
+		cur_live.state = SYNC_WRITE;
+	}
+	else
+	{
+		// Write mode, normal data: use WRITE_BYTE
+		cur_live.state = WRITE_BYTE;
+	}
 
 	pll_reset(cur_live.tm);
 	checkpoint_live = cur_live;
@@ -1561,10 +1574,32 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 		}
 
 		case SYNC_WRITE:
-			// SYNC_WRITE is reserved for future functionality
-			// (writing sync patterns with special handling)
-			// For now, treat as RUNNING
-			[[fallthrough]];
+		{
+			// SYNC_WRITE state: Write sync patterns when wrsync is active
+			// This is used during disk formatting to write the sync field
+
+			if (cur_live.tm > limit)
+				return;
+
+			// Write one bit to the PLL (wrsync is active)
+			if (!cur_live.drw) // Write mode
+			{
+				int write_bit = BIT(cur_live.shift_reg_write, 9);
+				if (pll_write_next_bit(write_bit, cur_live.tm, get_floppy(), limit))
+					return;  // Hit time limit, will resume later
+
+				// Count bits in sync write mode
+				cur_live.bit_counter++;
+				if (cur_live.bit_counter == GCR_BITS_PER_BYTE)
+				{
+					cur_live.bit_counter = 0;
+				}
+			}
+
+			// Transition to SYNC_FOUND to continue processing
+			cur_live.state = SYNC_FOUND;
+			break;
+		}
 
 		case RUNNING:
 		{
@@ -1611,9 +1646,22 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 				return;
 			}
 
-			// Route to the appropriate state based on read/write mode
-			// cur_live.drw: true = read mode, false = write mode
-			cur_live.state = cur_live.drw ? READ_BYTE : WRITE_BYTE;
+			// Route to the appropriate state based on read/write mode and wrsync
+			if (cur_live.drw)
+			{
+				// Read mode: always use READ_BYTE
+				cur_live.state = READ_BYTE;
+			}
+			else if (cur_live.wrsync)
+			{
+				// Write mode with wrsync active: writing sync patterns
+				cur_live.state = SYNC_WRITE;
+			}
+			else
+			{
+				// Write mode, normal data: use WRITE_BYTE
+				cur_live.state = WRITE_BYTE;
+			}
 			break;
 		}
 
@@ -1633,9 +1681,22 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 
 			m_via5->write_ca1(cur_live.brdy);
 
-			// After syncpoint, route to the appropriate state based on mode
-			// cur_live.drw: true = read mode, false = write mode
-			cur_live.state = cur_live.drw ? READ_BYTE : WRITE_BYTE;
+			// After syncpoint, route to the appropriate state based on mode and wrsync
+			if (cur_live.drw)
+			{
+				// Read mode: always use READ_BYTE
+				cur_live.state = READ_BYTE;
+			}
+			else if (cur_live.wrsync)
+			{
+				// Write mode with wrsync active: writing sync patterns
+				cur_live.state = SYNC_WRITE;
+			}
+			else
+			{
+				// Write mode, normal data: use WRITE_BYTE
+				cur_live.state = WRITE_BYTE;
+			}
 			checkpoint();
 			break;
 		}
