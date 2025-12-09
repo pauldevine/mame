@@ -1575,29 +1575,55 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 
 		case SYNC_WRITE:
 		{
-			// SYNC_WRITE state: Write sync patterns when wrsync is active
+			// SYNC_WRITE state: Write sync patterns (0x3FF) when wrsync is active
 			// This is used during disk formatting to write the sync field
+			// Each sync byte is 10 consecutive 1-bits (0x3FF in GCR)
 
 			if (cur_live.tm > limit)
 				return;
 
-			// Write one bit to the PLL (wrsync is active)
-			if (!cur_live.drw) // Write mode
+			// Ensure we're in write mode
+			if (cur_live.drw)
 			{
-				int write_bit = BIT(cur_live.shift_reg_write, 9);
-				if (pll_write_next_bit(write_bit, cur_live.tm, get_floppy(), limit))
-					return;  // Hit time limit, will resume later
-
-				// Count bits in sync write mode
-				cur_live.bit_counter++;
-				if (cur_live.bit_counter == GCR_BITS_PER_BYTE)
-				{
-					cur_live.bit_counter = 0;
-				}
+				// Shouldn't be in SYNC_WRITE during read mode - go to READ_BYTE
+				cur_live.state = READ_BYTE;
+				break;
 			}
 
-			// Transition to SYNC_FOUND to continue processing
-			cur_live.state = SYNC_FOUND;
+			// At the start of each sync byte, load the sync pattern
+			if (cur_live.bit_counter == 0)
+			{
+				cur_live.shift_reg_write = SYNC_PATTERN;  // 0x3FF = 10 consecutive 1-bits
+				LOGDISK("%s SYNC_WRITE: loading sync pattern %03x\n", cur_live.tm.as_string(), cur_live.shift_reg_write);
+			}
+
+			// Write one bit from the shift register
+			int write_bit = BIT(cur_live.shift_reg_write, 9);
+			if (pll_write_next_bit(write_bit, cur_live.tm, get_floppy(), limit))
+				return;  // Hit time limit, will resume later
+
+			// Shift the write register for the next bit
+			cur_live.shift_reg_write <<= 1;
+			cur_live.shift_reg_write &= 0x3ff;
+
+			// Count bits
+			cur_live.bit_counter++;
+			if (cur_live.bit_counter == GCR_BITS_PER_BYTE)
+			{
+				// Completed one 10-bit sync byte
+				cur_live.bit_counter = 0;
+				cur_live.sync_byte_counter++;
+				LOGDISK("%s SYNC_WRITE: completed sync byte #%d\n", cur_live.tm.as_string(), cur_live.sync_byte_counter);
+			}
+
+			// Check if wrsync is still active - if so, continue writing sync
+			// If wrsync went inactive, transition to WRITE_BYTE for data writing
+			if (!cur_live.wrsync)
+			{
+				LOGDISK("%s SYNC_WRITE: wrsync deasserted, switching to WRITE_BYTE\n", cur_live.tm.as_string());
+				cur_live.state = WRITE_BYTE;
+			}
+			// else: stay in SYNC_WRITE to continue writing sync patterns
 			break;
 		}
 
