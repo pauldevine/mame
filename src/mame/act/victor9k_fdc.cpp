@@ -1541,8 +1541,26 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 			break;
 		}
 
-		// New state machine handlers (not yet active - fall through to RUNNING)
 		case BYTE_READY:
+		{
+			// BYTE_READY state: Handle byte completion and BRDY signal
+			// This processes GCR decoding and write shift register management
+
+			if (cur_live.tm > limit)
+				return;
+
+			// Setup GCR decoder (prepares cur_live.i and cur_live.e for encoding/decoding)
+			setup_gcr_decoder();
+
+			// Byte ready processing - handle write shift register and BRDY signaling
+			handle_byte_ready_state(limit);
+
+			// Transition to RUNNING to handle signal detection and syncpoints
+			cur_live.state = RUNNING;
+			break;
+		}
+
+		// New state machine handlers (not yet active - fall through to RUNNING)
 		case SYNC_WRITE:
 			// TODO: Activate handlers incrementally
 			// For now, treat these states as RUNNING
@@ -1569,22 +1587,13 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 			// Asserted when we've counted 15 consecutive sync bytes (header sync threshold)
 			int syn = !(cur_live.sync_byte_counter == SYNC_HEADER_THRESHOLD);
 
-			// Setup GCR decoder (prepares cur_live.i and cur_live.e for encoding/decoding)
-			setup_gcr_decoder();
-
 			attotime next = cur_live.tm + m_period;
 			LOGDISK("%s:%s cyl %u bit %u sync %u bc %u sr %03x sbc %u sBC %u syn %u i %03x e %02x\n",cur_live.tm.as_string(),next.as_string(),get_floppy()->get_cyl(),bit,sync,cur_live.bit_counter,cur_live.shift_reg,cur_live.sync_bit_counter,cur_live.sync_byte_counter,syn,cur_live.i,cur_live.e);
 
-			// Byte ready processing - handle write shift register and BRDY signaling
-			// Save old BRDY state to detect changes
-			int old_brdy = cur_live.brdy;
-			handle_byte_ready_state(limit);
-			// If BRDY changed, we need a syncpoint
-			if (cur_live.brdy != old_brdy)
-				syncpoint = true;
+			// Get BRDY state (already calculated and updated by handle_byte_ready_state())
+			int brdy = cur_live.brdy;
 
 			// GCR error (check after byte ready processing)
-			int brdy = cur_live.brdy;  // Get current BRDY state from handler
 			int gcr_err = !(brdy || BIT(cur_live.e, 3));
 
 			if (cur_live.drw)
