@@ -1118,7 +1118,7 @@ floppy_image_device* victor_9000_fdc_device::get_floppy()
 void victor_9000_fdc_device::live_start()
 {
 	cur_live.tm = machine().time();
-	cur_live.state = RUNNING;
+	cur_live.state = READ_BYTE;  // Start in READ_BYTE state (falls through to RUNNING for now)
 	cur_live.next_state = -1;
 
 	cur_live.shift_reg = 0;
