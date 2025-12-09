@@ -1499,9 +1499,8 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 			if (cur_live.drw && cur_live.tm > limit)
 				return;
 
-			// Transition to RUNNING to handle rest of processing
-			// (Eventually this will transition to more specific states)
-			cur_live.state = RUNNING;
+			// Transition to SYNC_FOUND to continue processing
+			cur_live.state = SYNC_FOUND;
 			break;
 		}
 
@@ -1521,15 +1520,29 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 			if (!cur_live.drw && cur_live.tm > limit)
 				return;
 
-			// Transition to RUNNING to handle rest of processing
-			// (Eventually this will transition to more specific states)
-			cur_live.state = RUNNING;
+			// Transition to SYNC_FOUND to continue processing
+			cur_live.state = SYNC_FOUND;
+			break;
+		}
+
+		case SYNC_FOUND:
+		{
+			// SYNC_FOUND state: Count sync bytes and update SYN signal
+			// This processes the current bit to determine sync status
+
+			if (cur_live.tm > limit)
+				return;
+
+			// Sync byte counting - process sync field and determine SYN signal
+			handle_sync_found_state(limit);
+
+			// Transition to BYTE_READY to continue processing
+			cur_live.state = BYTE_READY;
 			break;
 		}
 
 		// New state machine handlers (not yet active - fall through to RUNNING)
 		case BYTE_READY:
-		case SYNC_FOUND:
 		case SYNC_WRITE:
 			// TODO: Activate handlers incrementally
 			// For now, treat these states as RUNNING
@@ -1551,9 +1564,6 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 
 			// Get the bit value for logging (last bit shifted into shift register)
 			int bit = cur_live.shift_reg & 1;
-
-			// Sync byte counting - process sync field and determine SYN signal
-			handle_sync_found_state(limit);
 
 			// Calculate SYN signal (active low) based on sync byte count
 			// Asserted when we've counted 15 consecutive sync bytes (header sync threshold)
