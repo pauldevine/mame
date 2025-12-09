@@ -8,7 +8,7 @@
 
 /*
 
-    value   error description
+    Error codes seen in Victor 9000 diagnostics:
 
     01      no sync pulse detected
     02      no header track
@@ -19,9 +19,44 @@
     07      data checksum error
     08      sync too long
     99      not a system disc
-
     11      Noise on sync
     FF      No sync (bad or unformatted disk)
+
+*/
+
+/*
+    Victor 9000 FDC - SYNC vs SYN Signal Distinction
+    =================================================
+
+    The Victor 9000 uses two distinct synchronization signals that are often confused:
+
+    1. SYNC (active low, _SYNC signal):
+       - Raw pattern detection: asserted when shift register contains 0x3FF (10 consecutive 1-bits)
+       - This is the fundamental sync pattern used in GCR encoding
+       - Pulses during the sync field as each sync byte (0x3FF) is detected
+       - Read by CPU via VIA6 PA7
+       - Think: "I see a sync pattern RIGHT NOW"
+
+    2. SYN (active low, _SYN signal):
+       - Level signal: asserted after counting sufficient consecutive sync bytes
+       - Indicates "we are properly synchronized and ready for data"
+       - Triggers after 15 sync bytes for header sync, or 5 sync bytes for data sync
+       - Output to CPU via syn_cb callback
+       - Think: "I've seen ENOUGH sync to be confident we're synchronized"
+
+    Victor 9000 Disk Format:
+    - Header sync: 15 GCR bytes (150 bits of 0x3FF pattern) → triggers SYN
+    - Sector header: 0x07 (ID) + track + sector + checksum (all GCR encoded)
+    - Gap 1: 8 bytes of 0x55
+    - Data sync: 5 GCR bytes (50 bits of 0x3FF pattern) → triggers SYN
+    - Data block: 0x08 (ID) + 512 data bytes + checksum (all GCR encoded)
+    - Gap 2: 8 bytes of 0x55
+
+    Sync Counting Logic:
+    - When SYNC pattern (0x3FF) detected: reset sync_byte_counter to 0
+    - As we continue through sync field: increment sync_byte_counter for each sync byte
+    - When sync_byte_counter reaches 15: assert SYN (we're synchronized)
+    - When non-sync byte seen: break sync counting sequence
 
 */
 
@@ -1083,7 +1118,6 @@ floppy_image_device* victor_9000_fdc_device::get_floppy()
 void victor_9000_fdc_device::live_start()
 {
 	cur_live.tm = machine().time();
-	cur_live.state = RUNNING;
 	cur_live.next_state = -1;
 
 	cur_live.shift_reg = 0;
@@ -1098,6 +1132,23 @@ void victor_9000_fdc_device::live_start()
 	cur_live.wd = m_wd;
 	cur_live.wrsync = m_wrsync;
 	cur_live.erase = m_erase;
+
+	// Initialize to the appropriate state based on read/write mode and wrsync
+	if (cur_live.drw)
+	{
+		// Read mode: always use READ_BYTE
+		cur_live.state = READ_BYTE;
+	}
+	else if (cur_live.wrsync)
+	{
+		// Write mode with wrsync active: writing sync patterns
+		cur_live.state = SYNC_WRITE;
+	}
+	else
+	{
+		// Write mode, normal data: use WRITE_BYTE
+		cur_live.state = WRITE_BYTE;
+	}
 
 	pll_reset(cur_live.tm);
 	checkpoint_live = cur_live;
@@ -1222,6 +1273,220 @@ void victor_9000_fdc_device::live_abort()
 	cur_live.gcr_err = 1;
 }
 
+//-------------------------------------------------
+//  State machine handlers (incrementally activated)
+//-------------------------------------------------
+
+void victor_9000_fdc_device::handle_read_byte_state(const attotime &limit)
+{
+	// This handler processes bit-by-bit reading in read mode
+	// Note: Currently called inline from RUNNING, not via state transition
+
+	// Read one bit from the PLL (only in read mode)
+	if (cur_live.drw)
+	{
+		int bit = pll_get_next_bit(cur_live.tm, get_floppy(), limit);
+		if(bit < 0)
+			return;  // Hit time limit, will resume later
+
+		// Clock read shift register (10 bits for GCR)
+		cur_live.shift_reg <<= 1;
+		cur_live.shift_reg |= bit;
+		cur_live.shift_reg &= SYNC_PATTERN;
+
+		// Calculate SYNC signal (active low when shift register contains 0x3FF)
+		// This is the raw sync pattern: 10 consecutive 1-bits
+		// Note: We calculate but don't store it - RUNNING will detect changes
+		int sync = !(cur_live.shift_reg == SYNC_PATTERN);
+
+		// Manage bit counter in read mode
+		if (!sync)
+		{
+			// SYNC detected (active low): reset bit counter
+			cur_live.bit_counter = 0;
+		}
+		else if (cur_live.sync)
+		{
+			// No SYNC: count bits for GCR byte assembly
+			cur_live.bit_counter++;
+			if (cur_live.bit_counter == GCR_BITS_PER_BYTE)
+			{
+				cur_live.bit_counter = 0;
+			}
+		}
+
+		// Note: cur_live.sync is NOT updated here - RUNNING will update it
+		// after detecting changes for syncpoint handling
+	}
+}
+
+void victor_9000_fdc_device::handle_byte_ready_state(const attotime &limit)
+{
+	// This handler processes byte completion (when bit_counter == 9)
+	// Note: Currently called inline from RUNNING, not via state transition
+	// The 'limit' parameter is unused but kept for future state machine compatibility
+
+	// Calculate byte ready signal (active low when bit_counter == 9)
+	int brdy = !(cur_live.bit_counter == 9);
+
+	// Handle write shift register
+	if (!brdy)
+	{
+		// Byte ready: load write shift register with GCR encoded value
+		cur_live.shift_reg_write = GCR_ENCODE(cur_live.e, cur_live.i);
+		LOGDISK("%s load write shift register %03x\n", cur_live.tm.as_string(), cur_live.shift_reg_write);
+	}
+	else
+	{
+		// Not byte ready: clock write shift register
+		cur_live.shift_reg_write <<= 1;
+		cur_live.shift_reg_write &= 0x3ff;
+	}
+
+	// Handle BRDY signal state changes
+	if (brdy != cur_live.brdy)
+	{
+		LOGDISK("%s BRDY %u\n", cur_live.tm.as_string(), brdy);
+		if (!brdy)
+		{
+			// Byte ready: signal CPU
+			cur_live.lbrdy_changed = true;
+			LOGDISK("%s LBRDY 0 : %02x\n", cur_live.tm.as_string(), GCR_DECODE(cur_live.e, cur_live.i));
+		}
+		cur_live.brdy = brdy;
+		// Note: syncpoint flag is set in RUNNING when this returns
+	}
+}
+
+void victor_9000_fdc_device::handle_sync_found_state(const attotime &limit)
+{
+	// This handler processes sync byte counting to determine when to assert SYN
+	// Note: Currently called inline from RUNNING, not via state transition
+	// The 'limit' parameter is unused but kept for future state machine compatibility
+
+	// Get current SYNC signal state (active low when we have 0x3FF in shift register)
+	int sync = cur_live.sync;
+
+	// Sync byte counter - counts consecutive sync bytes (0x3FF patterns)
+	// This is used to determine when to assert the SYN signal
+	if (sync)
+	{
+		// Not in sync (sync is active low): reset counters
+		cur_live.sync_bit_counter = 0;
+		cur_live.sync_byte_counter = 0;  // Start counting from 0
+	}
+	else if (!sync)
+	{
+		// In sync (sync is active low): count bits and bytes
+		cur_live.sync_bit_counter++;
+		if (cur_live.sync_bit_counter == GCR_BITS_PER_BYTE)
+		{
+			// Completed one 10-bit sync byte
+			cur_live.sync_bit_counter = 0;
+			cur_live.sync_byte_counter++;
+			if (cur_live.sync_byte_counter == SYNC_COUNTER_MAX)
+			{
+				// Wrap counter at 16 to prevent overflow
+				cur_live.sync_byte_counter = 0;
+			}
+		}
+	}
+
+	// SYN signal (active low) - asserted when we've counted 15 consecutive sync bytes
+	// This indicates we're properly synchronized (header sync threshold)
+	// Note: Data sync uses 5 bytes, but the hardware only checks for 15
+	// (Caller will detect syn changes and set syncpoint accordingly)
+}
+
+void victor_9000_fdc_device::handle_write_byte_state(const attotime &limit)
+{
+	// This handler processes bit-by-bit writing in write mode
+	// Note: Currently called inline from RUNNING, not via state transition
+
+	// Write one bit to the PLL (only in write mode)
+	if (!cur_live.drw) // TODO WPS (write protect sense)
+	{
+		int write_bit = BIT(cur_live.shift_reg_write, 9);
+		if (pll_write_next_bit(write_bit, cur_live.tm, get_floppy(), limit))
+			return;  // Hit time limit, will resume later
+
+		// Write mode: always count bits
+		cur_live.bit_counter++;
+		if (cur_live.bit_counter == GCR_BITS_PER_BYTE)
+		{
+			cur_live.bit_counter = 0;
+		}
+	}
+}
+
+void victor_9000_fdc_device::handle_sync_write_state(const attotime &limit)
+{
+	// TODO: Will be implemented incrementally
+	// For now, this stub does nothing
+}
+
+//-------------------------------------------------
+//  GCR decoder helper
+//-------------------------------------------------
+
+void victor_9000_fdc_device::setup_gcr_decoder()
+{
+	// Setup GCR decoder index based on read/write mode
+	// This prepares the index into the GCR ROM for encoding/decoding
+	if (cur_live.drw)
+	{
+		// Read mode: index from DRW flag and shift register
+		cur_live.i = cur_live.drw << 10 | cur_live.shift_reg;
+	}
+	else
+	{
+		// Write mode: index from DRW flag, write data, and wrsync
+		cur_live.i = cur_live.drw << 10 | 0x200 |
+			((cur_live.wd & 0xf0) << 1) | (cur_live.wrsync << 4) | (cur_live.wd & 0x0f);
+	}
+
+	// Lookup GCR encoding/decoding value from ROM
+	cur_live.e = m_gcr_rom->base()[cur_live.i];
+}
+
+//-------------------------------------------------
+//  Signal change detection helper
+//-------------------------------------------------
+
+bool victor_9000_fdc_device::detect_signal_changes(int sync, int syn, int gcr_err)
+{
+	// Detect changes in SYNC, SYN, and GCR_ERR signals
+	// Returns true if a syncpoint is needed
+	bool syncpoint = false;
+
+	// Check for SYNC signal change
+	if (sync != cur_live.sync)
+	{
+		LOGDISK("%s SYNC %u\n", cur_live.tm.as_string(), sync);
+		cur_live.sync = sync;
+		syncpoint = true;
+	}
+
+	// Check for SYN signal change
+	if (syn != cur_live.syn)
+	{
+		LOGDISK("%s SYN %u\n", cur_live.tm.as_string(), syn);
+		cur_live.syn = syn;
+		cur_live.syn_changed = true;
+		syncpoint = true;
+	}
+
+	// Check for GCR_ERR signal change
+	if (gcr_err != cur_live.gcr_err)
+	{
+		LOGDISK("%s GCR ERR %u\n", cur_live.tm.as_string(), gcr_err);
+		cur_live.gcr_err = gcr_err;
+		syncpoint = true;
+	}
+
+	return syncpoint;
+}
+
 void victor_9000_fdc_device::live_run(const attotime &limit)
 {
 	if(cur_live.state == IDLE || cur_live.next_state != -1)
@@ -1231,6 +1496,137 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 	{
 		switch(cur_live.state)
 		{
+		case READ_BYTE:
+		{
+			// READ_BYTE state: Read one bit and update shift register
+			// This is the first active state handler in our refactoring
+
+			if (cur_live.tm > limit)
+				return;
+
+			// Read bit and process shift register (read mode)
+			// This handles: PLL read, shift register, SYNC detection, bit counter
+			handle_read_byte_state(limit);
+
+			// If read hit time limit, return (handler updated cur_live.tm via PLL)
+			if (cur_live.drw && cur_live.tm > limit)
+				return;
+
+			// Transition to SYNC_FOUND to continue processing
+			cur_live.state = SYNC_FOUND;
+			break;
+		}
+
+		case WRITE_BYTE:
+		{
+			// WRITE_BYTE state: Write one bit and update shift register
+			// This is the write mode counterpart to READ_BYTE
+
+			if (cur_live.tm > limit)
+				return;
+
+			// Write bit and process bit counter (write mode)
+			// This handles: PLL write, bit counter
+			handle_write_byte_state(limit);
+
+			// If write hit time limit, return (handler updated cur_live.tm via PLL)
+			if (!cur_live.drw && cur_live.tm > limit)
+				return;
+
+			// Transition to SYNC_FOUND to continue processing
+			cur_live.state = SYNC_FOUND;
+			break;
+		}
+
+		case SYNC_FOUND:
+		{
+			// SYNC_FOUND state: Count sync bytes and update SYN signal
+			// This processes the current bit to determine sync status
+
+			if (cur_live.tm > limit)
+				return;
+
+			// Sync byte counting - process sync field and determine SYN signal
+			handle_sync_found_state(limit);
+
+			// Transition to BYTE_READY to continue processing
+			cur_live.state = BYTE_READY;
+			break;
+		}
+
+		case BYTE_READY:
+		{
+			// BYTE_READY state: Handle byte completion and BRDY signal
+			// This processes GCR decoding and write shift register management
+
+			if (cur_live.tm > limit)
+				return;
+
+			// Setup GCR decoder (prepares cur_live.i and cur_live.e for encoding/decoding)
+			setup_gcr_decoder();
+
+			// Byte ready processing - handle write shift register and BRDY signaling
+			handle_byte_ready_state(limit);
+
+			// Transition to RUNNING to handle signal detection and syncpoints
+			cur_live.state = RUNNING;
+			break;
+		}
+
+		case SYNC_WRITE:
+		{
+			// SYNC_WRITE state: Write sync patterns (0x3FF) when wrsync is active
+			// This is used during disk formatting to write the sync field
+			// Each sync byte is 10 consecutive 1-bits (0x3FF in GCR)
+
+			if (cur_live.tm > limit)
+				return;
+
+			// Ensure we're in write mode
+			if (cur_live.drw)
+			{
+				// Shouldn't be in SYNC_WRITE during read mode - go to READ_BYTE
+				cur_live.state = READ_BYTE;
+				break;
+			}
+
+			// At the start of each sync byte, load the sync pattern
+			if (cur_live.bit_counter == 0)
+			{
+				cur_live.shift_reg_write = SYNC_PATTERN;  // 0x3FF = 10 consecutive 1-bits
+				LOGDISK("%s SYNC_WRITE: loading sync pattern %03x\n", cur_live.tm.as_string(), cur_live.shift_reg_write);
+			}
+
+			// Write one bit from the shift register
+			int write_bit = BIT(cur_live.shift_reg_write, 9);
+			if (pll_write_next_bit(write_bit, cur_live.tm, get_floppy(), limit))
+				return;  // Hit time limit, will resume later
+
+			// Shift the write register for the next bit
+			cur_live.shift_reg_write <<= 1;
+			cur_live.shift_reg_write &= 0x3ff;
+
+			// Count bits
+			cur_live.bit_counter++;
+			if (cur_live.bit_counter == GCR_BITS_PER_BYTE)
+			{
+				// Completed one 10-bit sync byte
+				cur_live.bit_counter = 0;
+				cur_live.sync_byte_counter++;
+				LOGDISK("%s SYNC_WRITE: completed sync byte #%d\n", cur_live.tm.as_string(), cur_live.sync_byte_counter);
+			}
+
+			// Check if wrsync is still active - if so, continue writing sync
+			// If wrsync went inactive, transition to WRITE_BYTE for data writing
+			if (!cur_live.wrsync)
+			{
+				LOGDISK("%s SYNC_WRITE: wrsync deasserted, switching to WRITE_BYTE\n", cur_live.tm.as_string());
+				cur_live.state = WRITE_BYTE;
+			}
+			// else: stay in SYNC_WRITE to continue writing sync patterns
+			break;
+		}
+
 		case RUNNING:
 		{
 			bool syncpoint = false;
@@ -1238,99 +1634,27 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 			if (cur_live.tm > limit)
 				return;
 
-			// read bit
-			int bit = 0;
-			if (cur_live.drw)
-			{
-				bit = pll_get_next_bit(cur_live.tm, get_floppy(), limit);
-				if(bit < 0)
-					return;
-			}
+			// Get write bit value for logging
+			int write_bit = BIT(cur_live.shift_reg_write, 9);
 
-			// write bit
-			int write_bit = 0;
-			if (!cur_live.drw) // TODO WPS
-			{
-				write_bit = BIT(cur_live.shift_reg_write, 9);
-				if (pll_write_next_bit(write_bit, cur_live.tm, get_floppy(), limit))
-					return;
-			}
+			// Calculate SYNC signal from current shift register
+			// (active low when shift register contains 0x3FF)
+			int sync = !(cur_live.shift_reg == SYNC_PATTERN);
 
-			// clock read shift register
-			cur_live.shift_reg <<= 1;
-			cur_live.shift_reg |= bit;
-			cur_live.shift_reg &= 0x3ff;
+			// Get the bit value for logging (last bit shifted into shift register)
+			int bit = cur_live.shift_reg & 1;
 
-			// sync
-			int sync = !(cur_live.shift_reg == 0x3ff);
-
-			// bit counter
-			if (cur_live.drw)
-			{
-				if (!sync)
-				{
-					cur_live.bit_counter = 0;
-				}
-				else if (cur_live.sync)
-				{
-					cur_live.bit_counter++;
-					if (cur_live.bit_counter == 10)
-					{
-						cur_live.bit_counter = 0;
-					}
-				}
-			}
-			else
-			{
-				cur_live.bit_counter++;
-				if (cur_live.bit_counter == 10)
-				{
-					cur_live.bit_counter = 0;
-				}
-			}
-
-			// sync counter
-			if (sync)
-			{
-				cur_live.sync_bit_counter = 0;
-				cur_live.sync_byte_counter = 10; // TODO 9 in schematics
-			}
-			else if (!cur_live.sync)
-			{
-				cur_live.sync_bit_counter++;
-				if (cur_live.sync_bit_counter == 10)
-				{
-					cur_live.sync_bit_counter = 0;
-					cur_live.sync_byte_counter++;
-					if (cur_live.sync_byte_counter == 16)
-					{
-						cur_live.sync_byte_counter = 0;
-					}
-				}
-			}
-
-			// syn
-			int syn = !(cur_live.sync_byte_counter == 15);
-
-			// GCR decoder
-			if (cur_live.drw)
-			{
-				cur_live.i = cur_live.drw << 10 | cur_live.shift_reg;
-			}
-			else
-			{
-				cur_live.i = cur_live.drw << 10 | 0x200 | ((cur_live.wd & 0xf0) << 1) | cur_live.wrsync << 4 | (cur_live.wd & 0x0f);
-			}
-
-			cur_live.e = m_gcr_rom->base()[cur_live.i];
+			// Calculate SYN signal (active low) based on sync byte count
+			// Asserted when we've counted 15 consecutive sync bytes (header sync threshold)
+			int syn = !(cur_live.sync_byte_counter == SYNC_HEADER_THRESHOLD);
 
 			attotime next = cur_live.tm + m_period;
 			LOGDISK("%s:%s cyl %u bit %u sync %u bc %u sr %03x sbc %u sBC %u syn %u i %03x e %02x\n",cur_live.tm.as_string(),next.as_string(),get_floppy()->get_cyl(),bit,sync,cur_live.bit_counter,cur_live.shift_reg,cur_live.sync_bit_counter,cur_live.sync_byte_counter,syn,cur_live.i,cur_live.e);
 
-			// byte ready
-			int brdy = !(cur_live.bit_counter == 9);
+			// Get BRDY state (already calculated and updated by handle_byte_ready_state())
+			int brdy = cur_live.brdy;
 
-			// GCR error
+			// GCR error (check after byte ready processing)
 			int gcr_err = !(brdy || BIT(cur_live.e, 3));
 
 			if (cur_live.drw)
@@ -1338,58 +1662,31 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 			else
 				LOGBITS("%s cyl %u writing bit %u bc %u sr %03x i %03x e %02x\n",cur_live.tm.as_string(),get_floppy()->get_cyl(),write_bit,cur_live.bit_counter,cur_live.shift_reg_write,cur_live.i,cur_live.e);
 
-			if (!brdy)
-			{
-				// load write shift register
-				cur_live.shift_reg_write = GCR_ENCODE(cur_live.e, cur_live.i);
-
-				LOGDISK("%s load write shift register %03x\n",cur_live.tm.as_string(),cur_live.shift_reg_write);
-			}
-			else
-			{
-				// clock write shift register
-				cur_live.shift_reg_write <<= 1;
-				cur_live.shift_reg_write &= 0x3ff;
-			}
-
-			if (brdy != cur_live.brdy)
-			{
-				LOGDISK("%s BRDY %u\n", cur_live.tm.as_string(),brdy);
-				if (!brdy)
-				{
-					cur_live.lbrdy_changed = true;
-					LOGDISK("%s LBRDY 0 : %02x\n", cur_live.tm.as_string(), GCR_DECODE(cur_live.e, cur_live.i));
-				}
-				cur_live.brdy = brdy;
+			// Detect signal changes (SYNC, SYN, GCR_ERR) and set syncpoint if needed
+			if (detect_signal_changes(sync, syn, gcr_err))
 				syncpoint = true;
-			}
-
-			if (sync != cur_live.sync)
-			{
-				LOGDISK("%s SYNC %u\n", cur_live.tm.as_string(),sync);
-				cur_live.sync = sync;
-				syncpoint = true;
-			}
-
-			if (syn != cur_live.syn)
-			{
-				LOGDISK("%s SYN %u\n", cur_live.tm.as_string(),syn);
-				cur_live.syn = syn;
-				cur_live.syn_changed = true;
-				syncpoint = true;
-			}
-
-			if (gcr_err != cur_live.gcr_err)
-			{
-				LOGDISK("%s GCR ERR %u\n", cur_live.tm.as_string(),gcr_err);
-				cur_live.gcr_err = gcr_err;
-				syncpoint = true;
-			}
 
 			if (syncpoint)
 			{
 				live_delay(RUNNING_SYNCPOINT);
 				return;
+			}
+
+			// Route to the appropriate state based on read/write mode and wrsync
+			if (cur_live.drw)
+			{
+				// Read mode: always use READ_BYTE
+				cur_live.state = READ_BYTE;
+			}
+			else if (cur_live.wrsync)
+			{
+				// Write mode with wrsync active: writing sync patterns
+				cur_live.state = SYNC_WRITE;
+			}
+			else
+			{
+				// Write mode, normal data: use WRITE_BYTE
+				cur_live.state = WRITE_BYTE;
 			}
 			break;
 		}
@@ -1410,7 +1707,22 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 
 			m_via5->write_ca1(cur_live.brdy);
 
-			cur_live.state = RUNNING;
+			// After syncpoint, route to the appropriate state based on mode and wrsync
+			if (cur_live.drw)
+			{
+				// Read mode: always use READ_BYTE
+				cur_live.state = READ_BYTE;
+			}
+			else if (cur_live.wrsync)
+			{
+				// Write mode with wrsync active: writing sync patterns
+				cur_live.state = SYNC_WRITE;
+			}
+			else
+			{
+				// Write mode, normal data: use WRITE_BYTE
+				cur_live.state = WRITE_BYTE;
+			}
 			checkpoint();
 			break;
 		}
