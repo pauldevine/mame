@@ -1118,7 +1118,6 @@ floppy_image_device* victor_9000_fdc_device::get_floppy()
 void victor_9000_fdc_device::live_start()
 {
 	cur_live.tm = machine().time();
-	cur_live.state = READ_BYTE;  // Start in READ_BYTE state (falls through to RUNNING for now)
 	cur_live.next_state = -1;
 
 	cur_live.shift_reg = 0;
@@ -1133,6 +1132,10 @@ void victor_9000_fdc_device::live_start()
 	cur_live.wd = m_wd;
 	cur_live.wrsync = m_wrsync;
 	cur_live.erase = m_erase;
+
+	// Initialize to the appropriate state based on read/write mode
+	// cur_live.drw: true = read mode, false = write mode
+	cur_live.state = cur_live.drw ? READ_BYTE : WRITE_BYTE;
 
 	pll_reset(cur_live.tm);
 	checkpoint_live = cur_live;
@@ -1502,18 +1505,10 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 			break;
 		}
 
-		// New state machine handlers (not yet active - fall through to RUNNING)
-		case BYTE_READY:
-		case SYNC_FOUND:
 		case WRITE_BYTE:
-		case SYNC_WRITE:
-			// TODO: Activate handlers incrementally
-			// For now, treat these states as RUNNING
-			[[fallthrough]];
-
-		case RUNNING:
 		{
-			bool syncpoint = false;
+			// WRITE_BYTE state: Write one bit and update shift register
+			// This is the write mode counterpart to READ_BYTE
 
 			if (cur_live.tm > limit)
 				return;
@@ -1524,6 +1519,27 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 
 			// If write hit time limit, return (handler updated cur_live.tm via PLL)
 			if (!cur_live.drw && cur_live.tm > limit)
+				return;
+
+			// Transition to RUNNING to handle rest of processing
+			// (Eventually this will transition to more specific states)
+			cur_live.state = RUNNING;
+			break;
+		}
+
+		// New state machine handlers (not yet active - fall through to RUNNING)
+		case BYTE_READY:
+		case SYNC_FOUND:
+		case SYNC_WRITE:
+			// TODO: Activate handlers incrementally
+			// For now, treat these states as RUNNING
+			[[fallthrough]];
+
+		case RUNNING:
+		{
+			bool syncpoint = false;
+
+			if (cur_live.tm > limit)
 				return;
 
 			// Get write bit value for logging
@@ -1576,9 +1592,9 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 				return;
 			}
 
-			// Transition back to READ_BYTE to read the next bit
-			// This creates the basic state machine loop: READ_BYTE → RUNNING → READ_BYTE
-			cur_live.state = READ_BYTE;
+			// Route to the appropriate state based on read/write mode
+			// cur_live.drw: true = read mode, false = write mode
+			cur_live.state = cur_live.drw ? READ_BYTE : WRITE_BYTE;
 			break;
 		}
 
@@ -1598,9 +1614,9 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 
 			m_via5->write_ca1(cur_live.brdy);
 
-			// After syncpoint, transition to READ_BYTE to continue reading
-			// This maintains the state machine loop: READ_BYTE → RUNNING → READ_BYTE
-			cur_live.state = READ_BYTE;
+			// After syncpoint, route to the appropriate state based on mode
+			// cur_live.drw: true = read mode, false = write mode
+			cur_live.state = cur_live.drw ? READ_BYTE : WRITE_BYTE;
 			checkpoint();
 			break;
 		}
