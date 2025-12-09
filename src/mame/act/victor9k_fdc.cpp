@@ -1575,6 +1575,10 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 				live_delay(RUNNING_SYNCPOINT);
 				return;
 			}
+
+			// Transition back to READ_BYTE to read the next bit
+			// This creates the basic state machine loop: READ_BYTE → RUNNING → READ_BYTE
+			cur_live.state = READ_BYTE;
 			break;
 		}
 
@@ -1594,7 +1598,9 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 
 			m_via5->write_ca1(cur_live.brdy);
 
-			cur_live.state = RUNNING;
+			// After syncpoint, transition to READ_BYTE to continue reading
+			// This maintains the state machine loop: READ_BYTE → RUNNING → READ_BYTE
+			cur_live.state = READ_BYTE;
 			checkpoint();
 			break;
 		}
