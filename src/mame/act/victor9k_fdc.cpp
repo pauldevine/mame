@@ -1518,14 +1518,6 @@ void victor_9000_fdc_device::live_run(const attotime &limit)
 			if (cur_live.tm > limit)
 				return;
 
-			// Read bit and process shift register (read mode)
-			// This handles: PLL read, shift register, SYNC detection, bit counter
-			handle_read_byte_state(limit);
-
-			// If read hit time limit, return (handler updated cur_live.tm via PLL)
-			if (cur_live.drw && cur_live.tm > limit)
-				return;
-
 			// Write bit and process bit counter (write mode)
 			// This handles: PLL write, bit counter
 			handle_write_byte_state(limit);
