@@ -66,9 +66,21 @@ private:
 
 	enum {
 		IDLE,
-		RUNNING,
+		READ_BYTE,       // Reading bits, building 10-bit GCR symbol
+		BYTE_READY,      // GCR byte complete, signal CPU
+		SYNC_FOUND,      // Detected sync pattern, counting sync bytes
+		WRITE_BYTE,      // Writing GCR encoded byte
+		SYNC_WRITE,      // Writing sync patterns
+		RUNNING,         // Legacy monolithic state (current implementation)
 		RUNNING_SYNCPOINT
 	};
+
+	// Sync field constants
+	static constexpr uint16_t SYNC_PATTERN = 0x3FF;      // 10 consecutive 1-bits
+	static constexpr int GCR_BITS_PER_BYTE = 10;         // GCR uses 10-bit symbols
+	static constexpr int SYNC_HEADER_THRESHOLD = 15;     // Header sync: 15 bytes
+	static constexpr int SYNC_DATA_THRESHOLD = 5;        // Data sync: 5 bytes (unused by hardware)
+	static constexpr int SYNC_COUNTER_MAX = 16;          // Counter wraps at 16
 
 	struct live_info {
 		attotime tm;
@@ -177,6 +189,20 @@ private:
 	void live_sync();
 	void live_abort();
 	void live_run(const attotime &limit = attotime::never);
+
+	// State machine handlers (not yet used - will be activated incrementally)
+	void handle_read_byte_state(const attotime &limit);
+	void handle_byte_ready_state(const attotime &limit);
+	void handle_sync_found_state(const attotime &limit);
+	void handle_write_byte_state(const attotime &limit);
+	void handle_sync_write_state(const attotime &limit);
+
+	// Helper function for GCR decoding
+	void setup_gcr_decoder();
+
+	// Helper function for signal change detection
+	// Returns true if a syncpoint is needed
+	bool detect_signal_changes(int sync, int syn, int gcr_err);
 
 	static void floppy_formats(format_registration &fr);
 

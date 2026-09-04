@@ -481,7 +481,10 @@ void victor9k_format::extract_sectors(const floppy_image &image, const format &f
 	auto bitstream = generate_bitstream_from_track(track, head, cell_size[speed_zone[head][track]], image);
 	auto sectors = extract_sectors_from_bitstream_victor_gcr5(bitstream);
 
+	// Ensure sectors vector has enough elements for all possible sector IDs
+	// This handles unformatted or partially formatted disks
 	if (sectors.size() == 0) {
+		osd_printf_verbose("extract_sectors: No sectors found on track %d head %d, creating empty sectors\n", track, head);
 		for(int i=0; i<sector_count; i++) {
 			std::vector<unsigned char> sector;
 			sectors.push_back(sector);
@@ -490,6 +493,16 @@ void victor9k_format::extract_sectors(const floppy_image &image, const format &f
 
 	for (int i = 0; i<sector_count; i++) {
 		desc_s &ds = sdesc[i];
+
+		// Bounds check: ensure sector_id is within the sectors vector
+		// This prevents crashes when disk isn't properly formatted
+		if (ds.sector_id >= sectors.size()) {
+			osd_printf_verbose("Head: %01d Track: %02d Sector: %02d - sector_id %d out of range (max %d), filling with zeros\n",
+				head, track, i, ds.sector_id, (int)sectors.size() - 1);
+			memset((uint8_t *)ds.data, 0, ds.size);
+			continue;
+		}
+
 		const auto &data = sectors[ds.sector_id];
 		osd_printf_verbose("Head: %01d TracK: %02d Total Sectors: %02d Current Sector: %02d ",
 			head, track, sector_count, i);
